@@ -1,0 +1,526 @@
+---
+title: "Calculating Divergence Index"
+author: "Tracy Lam-Hine"
+date: "2023-07-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Overview of Divergence Index
+
+The Othering and Belonging Institute [describes](https://belonging.berkeley.edu/technical-appendix) their preferred measure of segregation as the Divergence Index. [Roberto](https://arxiv.org/pdf/1508.01167.pdf) (2016) developed the Divergence Index as an alternative to other measures of segregation, including the dissimilarity index or the entropy score. In particular:
+
+> *The Divergence Index for location* $i$ *is:*
+>
+> $$ D_i = \sum^{M}_{m=1} \pi_{im} log\frac{\pi_{im}}{\pi_m}$$
+>
+> *where* $\pi_{im}$ *is group* $m$*'s proportion of the population in location* $i$(i.e. smaller geography) *and* $\pi_m$ *is group* $m$*'s proportion of the overall population* (i.e. bigger geography)*. If a location has the same composition as the overall population, then* $D_i = 0$*, indicating no segregation. To measure segregation spatially, we would replace* $\pi_{im}$ *with* $\tilde{\pi}_{im}$*, which is group* $m$*'s proportion of the spatially weighted population within a given distance* $r$ *of location* $i$ *(see Roberto 2015).*
+>
+> *Overall segregation in the region is the population-weighted average of the divergence for all locations:*
+>
+> $$ D = \sum^{N}_{i=1} \frac{\tau_i}{T}D_i$$
+>
+> *Where* $T$ *is overall population count, and* $\tau_i$ *is the population count for locations* $i$*. If all locations have the same composition as the overall population, then* $D=0$*, indicating no segregation in the region.*
+>
+> *The Divergence Index is additively decomposable, meaning that we can aggregate residential locations into districts and calculate the segregation occurring within and between the districts in a region. The sum of the within and between components of segregation is equal to overall segregation for the region. For example, to measure residential segregation for districts within a city, we rewrite the Divergence Index as the sum of between-district segregation and the average within-district segregation. The average within-district segregation for district* $j$ *is:*
+>
+> $$ D_j = \sum_{i\in{S_j}} \frac{\tau_i}{T_j} \sum^{M}_{m=1}\pi_{jm}log\frac{\pi_{im}}{\pi_{jm}}$$*where* $S_j$ *is the set of locations in district* $j$*. The reference distribution,* $\pi_{jm}$ *is the population composition of district* $j$*, which is calculated as the population-weighted average of the group proportions for all localities (*$i$*) within the district:* $\pi_{jm} = \sum_{i\in{S_j}}\frac{\tau_i}{T_j}\pi_{im}$*, where* $T_j$ *is the population count for district* $j$*. The between-district segregation is*
+>
+> $$D_0 = \sum^{J}_{j=1} \frac{T_j}{T} \sum^{M}_{m=1} \pi_{jm} log \frac{\pi_{jm}}{\pi_m}$$
+>
+> *Total segregation is the sum of the between-district segregation (*$D_0$*) and the average within-district segregation (*$D_j$*):*
+>
+> $$D = D_0 + \sum^{J}_{j} \frac{T_j}{T} D_j$$
+
+### Using `tidycensus` to get the data
+
+The [`tidycensus`](https://walker-data.com/tidycensus/index.html) package provides a useful interface to Census and American Community Survey (ACS) data sets; we will use this package to load the appropriate data to construct the Divergence Index.
+
+We will use the `get_acs` function to access aggregated 5-year ACS tables (as opposed to individual-level data) of population counts at both the census tract and public use microdata area (PUMA) level. Tracts nest completely within a PUMA. Unfortunately, because the 2020 and 2021 5-year ACS releases use 2020 tract and 2010 PUMA boundaries, we need to use the 2015-2019 5-year ACS release to make sure our tracts and PUMAs align. When 2020 PUMAs are released sometime in 2023, we can recalculate the MMSR with the 2018-2022 5-year ACS data.
+
+```{r load-packages, message = F}
+library(tidyverse)
+library(tidycensus)
+library(data.table)
+library(tigris)
+library(mapview)
+library(poLCA)
+```
+
+To access Census and ACS data using `tidycensus` you will need to obtain and set a Census API key in your R environment. You can obtain a key [here](https://api.census.gov/data/key_signup.html) - make sure not to share it with anyone.
+
+```{r specify-key, eval = F}
+# note - you will have to get a census API key in order to access census data 
+census_api_key("YOUR API KEY GOES HERE")
+```
+
+```{r personal-key, include = F}
+census_api_key("f77de7a3ed4802ce5f3a28b99ba1105b8bb39529", install = T)
+```
+
+#### Find our variables in the codebook for ACS aggregate tables
+
+To keep things simple let's focus on California (FIPS code = 06) rather than calculating these measures for the entire US. We can use the `load_variables` function to store all 5-year ACS variables in a `tbl` and then search for population by race variables.
+
+```{r get-tract-pop-vars, results = F}
+acs19_tab_vars <- load_variables(2019, "acs5", cache = TRUE) 
+
+# Race
+acs19_tab_vars %>% 
+  filter(concept == "HISPANIC OR LATINO ORIGIN BY RACE") %>% 
+  View()
+```
+
+Total population count is `B03002_001`. These are the relevant variables for each racial group:
+
+-   Non-Hispanic monoracial White resident count: `B03002_003`
+
+-   Non-Hispanic monoracial Black resident count: ``` B03002``_004 ```
+
+-   Non-Hispanic monoracial American Indian and Alaska Native resident count: `B03002_005`
+
+-   Non-Hispanic monoracial Asian resident count: `B03002_006`
+
+-   Non-Hispanic monoracial Native Hawaiian and Other Pacific Islander resident count: `B03002_007`
+
+-   Non-Hispanic monoracial some other race count: `B03002_008`
+
+-   Multiracial (including Multiracial Hispanic) resident count: `B03002_009 + B03002_019`
+
+-   Hispanic monoracial resident count: `B03002_012 - B03002_019`
+
+```{r check-vars-codebook}
+c("B03002_001", "B03002_003", "B03002_004", "B03002_005", "B03002_006", "B03002_007", "B03002_008", "B03002_009", "B03002_012", "B03002_019") %in% acs19_tab_vars$name 
+```
+
+### Calculate unidimensional measures for all PUMAs in California
+
+```{r get-tract-race-pops, message = F}
+race_pop_tract <- 
+  get_acs(
+    geography = "tract",
+    variables = c("B03002_003", "B03002_004", "B03002_005", "B03002_006",
+                  "B03002_007", "B03002_008", "B03002_009", "B03002_012", "B03002_019"),
+    state = "06",
+    survey = "acs5",
+    year = 2019) %>% 
+  rename(
+    tract_name = NAME,
+    tract_est = estimate,
+    tract_moe = moe
+  )
+
+tot_pop_tract <- 
+  get_acs(
+    geography = "tract",
+    variables = "B03002_001",
+    state = "06",
+    survey = "acs5",
+    year = 2019)  %>% 
+  dplyr::select(GEOID, estimate) %>% 
+  rename(tract_total = estimate)
+
+race_pop_puma <- 
+  get_acs(
+    geography = "public use microdata area",
+    variables = c("B03002_003", "B03002_004", "B03002_005", "B03002_006",
+                  "B03002_007", "B03002_008", "B03002_009", "B03002_012", "B03002_019"),
+    state = "06",
+    survey = "acs5",
+    year = 2019) %>% 
+  rename(
+    puma_name = NAME,
+    puma_est = estimate,
+    puma_moe = moe
+  )
+
+tot_pop_puma <- 
+  get_acs(
+    geography = "public use microdata area",
+    variables = "B03002_001",
+    state = "06",
+    survey = "acs5",
+    year = 2019) %>% 
+  dplyr::select(GEOID, estimate) %>% 
+  rename(puma_total = estimate)
+
+
+race_pop_tract <- 
+  left_join(race_pop_tract, tot_pop_tract, by = "GEOID")
+
+race_pop_puma <- 
+  left_join(race_pop_puma, tot_pop_puma, by = "GEOID")
+
+rm(tot_pop_tract, tot_pop_puma)
+```
+
+We also need a crosswalk between PUMAs and census tracts. The 2015-2019 ACS used the 2010 PUMA definitions - we can use the 2010 PUMA-tract crosswalk available from the Census [here](https://www2.census.gov/geo/docs/maps-data/data/rel/2010_Census_Tract_to_2010_PUMA.txt). We need to modify the TRACTCE and PUMA5CE labels to to match the GEOID variable syntax in our data (tract GEOID has 11 characters and PUMA GEOID has 7).
+
+```{r load-xwalk}
+# load in 2010 tract-PUMA cross walks
+xwalk <- fread(
+  "https://www2.census.gov/geo/docs/maps-data/data/rel/2010_Census_Tract_to_2010_PUMA.txt",
+  colClasses = 'character',
+  data.table = T) %>% 
+  filter(STATEFP == "06")
+
+# paste FIPS codes into tract and PUMA variables to match GEOID length
+xwalk <- xwalk %>% 
+  mutate(TRACT11 = paste0(STATEFP, COUNTYFP, TRACTCE),
+         PUMA7 = paste0(STATEFP, PUMA5CE)) %>% 
+  dplyr::select(TRACT11, PUMA7)
+```
+
+Now, let's get the `PUMA7` ID from `xwalk` for each tract in `race_pop_tract` by matching on `TRACT11`. We'll do this in a new `data.frame` called `joined`. We'll then pull in the corresponding `PUMA7` population estimates from `race_pop_puma`.
+
+```{r join-puma-data}
+# join in PUMA IDs from xwalk
+joined <- left_join(
+  race_pop_tract, 
+  xwalk,
+  by = c("GEOID" = "TRACT11")) %>% 
+  rename("TRACT11" = "GEOID")
+
+# join in PUMA population data from race_pop_puma
+joined <- left_join(
+  joined,
+  race_pop_puma,
+  by = c("PUMA7" = "GEOID", 
+         "variable")) 
+```
+
+Now we can calculate the PUMA-level Divergence Index described above, which as a reminder is:
+
+$$ D_i = \sum^{M}_{m=1} \pi_{im} log\frac{\pi_{im}}{\pi_m}$$
+
+Let's also rename the values of `joined$variable` to the racial groups in order to make it easier to keep track.
+
+```{r calc-puma-segregation}
+joined <- joined %>% 
+  mutate(
+    variable = case_when(
+      variable == "B03002_003" ~ "White",
+      variable == "B03002_004" ~ "Black",
+      variable == "B03002_005" ~ "AIAN",
+      variable == "B03002_006" ~ "Asian",
+      variable == "B03002_007" ~ "NHPI",
+      variable == "B03002_008" ~ "Other",
+      variable == "B03002_009" ~ "Multi_NH",
+      variable == "B03002_012" ~ "Hispanic",
+      variable == "B03002_019" ~ "Multi_H",
+    )
+  )
+
+# calculate population proportions for each tract
+joined <- joined %>% 
+  mutate(
+    prop_tract = case_when(
+      tract_total == 0 ~ 0, 
+      TRUE ~ tract_est / tract_total
+      ),
+    prop_puma = case_when(
+      puma_total == 0 ~ 0,
+      TRUE ~ puma_est / puma_total
+    )
+  )
+
+# calculate tract proportion * log(tract proportion / puma proportion)
+joined <- joined %>% 
+  mutate(
+    log_prop = case_when(
+      prop_puma == 0 ~ 0, 
+      TRUE ~ prop_tract * log(prop_tract / prop_puma)
+    )
+  )
+
+# roll up variables to tract level
+joined <- joined %>% 
+  dplyr::select(-c("tract_est", "tract_moe", "puma_est", "puma_moe")) %>% 
+  pivot_wider(
+    names_from = variable,
+    names_glue = "{variable}_prop",
+    values_from = prop
+  )
+
+# sum Multi_NH and Multi_H proportions, subtract Multi_H from Hispanic proportion
+joined <- joined %>%
+  mutate(Multi_prop = Multi_NH_prop + Multi_H_prop,
+         Hispanic_prop = Hispanic_prop - Multi_H_prop) %>% 
+  dplyr::select(-c("Multi_NH_prop", "Multi_H_prop"))
+
+# calculate wi/WT - bi/BT for each tract
+joined <- joined %>% mutate(prop_diff = abs(white_prop - black_prop))
+
+# roll up to PUMA level and calculate dissimilarity index
+joined_summ <- joined %>% 
+  group_by(PUMA7) %>% 
+  summarize(dissim_index = 1/2 * sum(prop_diff))
+
+options(scipen=999) # turn off scientific notation
+```
+
+Let's map the dissimilarity index:
+
+```{r mapping, message = F}
+ca_puma_map <- pumas("CA") %>% 
+  left_join(joined_summ, by = c("GEOID10" = "PUMA7"))
+
+mapview(ca_puma_map, zcol = "dissim_index")
+```
+
+#### 2. Education inequity
+
+Let's now move to the education inequity dimension of the MMSR. As a reminder, we need the college graduation rate of White (`(C15002H_006` + `C15002H_011`) / `C15002H_001` ) and Black ((`C15002B_006` + `C15002B_011`) / `C15002B_001`) adults over age 25. These formulas sum the counts of male and female college graduates and then divide by the total population count. We'll then take the White-to-Black ratio of college graduation rates in each PUMA to get the education dimension of the MMSR. Finally, we'll `join` these into our summary `data.frame`, `joined_summ`.
+
+```{r calc-edu-dim}
+# first pull in the relevant variables into a df called edu_puma
+edu_puma <- 
+  get_acs(
+    geography = "public use microdata area",
+    variables = c("C15002H_006", "C15002H_011", "C15002H_001",
+                  "C15002B_006", "C15002B_011", "C15002B_001"),
+    state = "06",
+    survey = "acs5",
+    year = 2019) %>% 
+  rename(PUMA7 = GEOID) %>% 
+  dplyr::select(-moe)
+
+# pivot from long to wide format for calculations within each PUMA
+edu_puma <- edu_puma %>% 
+  pivot_wider(
+    names_from = variable,
+    values_from = estimate
+  )
+
+# calculate the white-black ratio in college graduation rates
+edu_puma <- edu_puma %>% 
+  mutate(
+    edu_dim = 
+      ((C15002H_006 + C15002H_011) / C15002H_001) / 
+      ((C15002B_006 + C15002B_011) / C15002B_001)
+    ) %>% 
+  dplyr::select(PUMA7, NAME, edu_dim)
+
+# join values into joined_summ
+joined_summ <- left_join(joined_summ, edu_puma, by = "PUMA7") %>% 
+  dplyr::select(PUMA7, NAME, dissim_index, edu_dim)
+```
+
+#### 3. Employment inequity
+
+For the employment inequity dimension of the MMSR, we need the employment rate of White (`C23002H_007` + `C23002H_020`) / (`C23002H_006` + `C23002H_019`) and Black (`C23002B_007` + `C23002B_020`) / (`C23002B_006` + `C23002B_019`) civilians ages 16-64 in the labor force. These formulas sum the counts of employed male and female civilians ages 16-64 and then divide by the total count of civilians 16-64 in the labor force. Like with the education dimension, we calculate the White-to-Black rate ratio in each PUMA, and `join` these into `joined_summ`.
+
+```{r calc-emp-dim}
+# first pull in the relevant variables into a df called emp_puma
+emp_puma <- 
+  get_acs(
+    geography = "public use microdata area",
+    variables = c("C23002H_007", "C23002H_020", "C23002H_006", "C23002H_019",
+                  "C23002B_007", "C23002B_020", "C23002B_006", "C23002B_019"),
+    state = "06",
+    survey = "acs5",
+    year = 2019) %>% 
+  rename(PUMA7 = GEOID) %>% 
+  dplyr::select(-c("NAME", "moe"))
+
+# pivot from long to wide format for calculations within each PUMA
+emp_puma <- emp_puma %>% 
+  pivot_wider(
+    names_from = variable,
+    values_from = estimate
+  )
+
+# calculate the white-black ratio in employment rates
+emp_puma <- emp_puma %>% 
+  mutate(
+    emp_dim = 
+      ((C23002H_007 + C23002H_020) / (C23002H_006 + C23002H_019)) / 
+      ((C23002B_007 + C23002B_020) / (C23002B_006 + C23002B_019)) 
+    ) %>% 
+  dplyr::select(PUMA7, emp_dim)
+
+# join values into joined_summ
+joined_summ <- left_join(joined_summ, emp_puma, by = "PUMA7")
+```
+
+#### 4. Income inequity
+
+To represent income inequity, we will use the index of concentration at the extremes (ICE). To calculate the ICE, we take the difference in number of White households with incomes of \$100k+ (`B19001H_014` + `B19001H_015` + `B19001H_016` + `B19001H_017`) and Black households with incomes under \$25k (`B19001B_002` + `B19001B_003` + `B19001B_004` + `B19001B_005`), and divide by the total number of White (`B19001H_001`) and Black (`B19001B_001`) households in the PUMA. The ICE should range from -1 to 1.
+
+```{r calc-ice-dim}
+# first pull in the relevant variables into a df called ice_puma
+ice_puma <- 
+  get_acs(
+    geography = "public use microdata area",
+    variables = c("B19001H_014", "B19001H_015", "B19001H_016", "B19001H_017", "B19001H_001",
+                  "B19001B_002", "B19001B_003", "B19001B_004", "B19001B_005", "B19001B_001"),
+    state = "06",
+    survey = "acs5",
+    year = 2019) %>% 
+  rename(PUMA7 = GEOID) %>% 
+  dplyr::select(-c("NAME", "moe"))
+
+# pivot from long to wide format for calculations within each PUMA
+ice_puma <- ice_puma %>% 
+  pivot_wider(
+    names_from = variable,
+    values_from = estimate
+  )
+
+# calculate the ICE
+ice_puma <- ice_puma %>% 
+  mutate(
+    ice_dim = 
+      ((B19001H_014 + B19001H_015 + B19001H_016 + B19001H_017) - 
+         (B19001B_002 + B19001B_003 + B19001B_004 + B19001B_005)) /
+      (B19001H_001 + B19001B_001)
+    ) %>% 
+  dplyr::select(PUMA7, ice_dim)
+
+# join values into joined_summ
+joined_summ <- left_join(joined_summ, ice_puma, by = "PUMA7")
+```
+
+#### 5. Homeownership inequity
+
+For the last dimension, homeownership inequity, we will simply calculate the ratio of White (`B25003H_002` / `B25003H_001`) to Black (`B25003B_002` / `B25003B_001`) owner-occupancy (homeownership) rates.
+
+```{r calc-home-dim}
+# first pull in the relevant variables into a df called emp_puma
+home_puma <- 
+  get_acs(
+    geography = "public use microdata area",
+    variables = c("B25003H_002", "B25003H_001", "B25003B_002", "B25003B_001"),
+    state = "06",
+    survey = "acs5",
+    year = 2019) %>% 
+  rename(PUMA7 = GEOID) %>% 
+  dplyr::select(-c("NAME", "moe"))
+
+# pivot from long to wide format for calculations within each PUMA
+home_puma <- home_puma %>% 
+  pivot_wider(
+    names_from = variable,
+    values_from = estimate
+  )
+
+# calculate the white-black ratio in employment rates
+home_puma <- home_puma %>% 
+  mutate(
+    home_dim = 
+      (B25003H_002 / B25003H_001) / (B25003B_002 / B25003B_001)
+    ) %>% 
+  dplyr::select(PUMA7, home_dim)
+
+# join values into joined_summ
+joined_summ <- left_join(joined_summ, home_puma, by = "PUMA7")
+```
+
+### Calculate MMSR for all PUMAs in California
+
+Now that we have the unidimensional measures for each of the five dimensions for all PUMAs in California, we'll move on to the construction of the multidimensional measure. The bulk of this involves conducting a [latent class analysis](https://www.theanalysisfactor.com/what-is-latent-class-analysis/) (LCA), which allows us to identify subgroups (latent classes) of PUMAs that share like characteristics, namely, similar values of the unidimensional measures we've just calculated.
+
+Before we move into the LCA, we'll need to dichotomize each measure into high versus low based on the sample median for each dimension. Let's set values that are greater than the median to 1 (to represent high), and 0 otherwise (to represent low).
+
+```{r dichot-dims}
+joined_summ <- joined_summ %>% 
+  mutate(
+    dissim_bin = case_when(
+      dissim_index > median(dissim_index) ~ 1,
+      TRUE ~ 0), 
+    edu_bin = case_when(
+      edu_dim > median(edu_dim) ~ 1,
+      TRUE ~ 0), 
+    emp_bin = case_when(
+      emp_dim > median(emp_dim) ~ 1,
+      TRUE ~ 0), 
+    ice_bin = case_when(
+      ice_dim > median(ice_dim) ~ 1,
+      TRUE ~ 0), 
+    home_bin = case_when(
+      home_dim > median(home_dim) ~ 1,
+      TRUE ~ 0)
+    )
+```
+
+```{r}
+joined_summ %>% 
+  dplyr::filter(dissim_bin == 1 & 
+                  edu_bin == 1 & 
+                  emp_bin == 1 & 
+                  ice_bin == 1 & 
+                  home_bin == 1) %>% 
+  pull(NAME)
+
+joined_summ %>% 
+  dplyr::filter(dissim_bin == 0 & 
+                  edu_bin == 0 & 
+                  emp_bin == 0 & 
+                  ice_bin == 0 & 
+                  home_bin == 0) %>% 
+  pull(NAME)
+```
+
+```{r}
+joined_summ <- joined_summ %>% 
+  mutate(dim_sums = 
+           dissim_index / max(dissim_index) + 
+           edu_dim / max(edu_dim)  + 
+           emp_dim / max(emp_dim)  + 
+           ice_dim / max(ice_dim)  + 
+           home_dim / max(home_dim) ,
+         bin_sums = dissim_bin + edu_bin + emp_bin + ice_bin + home_bin)
+
+ca_puma_map <- pumas("CA") %>% 
+  left_join(joined_summ, by = c("GEOID10" = "PUMA7"))
+
+mapview(ca_puma_map, zcol = "dim_sums")
+```
+
+#### APPENDIX: DO NOT RUN
+
+Note that there is one tract in `joined` (`06037137000`) that is missing its corresponding PUMA. It looks like this tract is present in the 2020 crosswalk, however (available [here](https://www2.census.gov/geo/docs/maps-data/data/rel2020/2020_Census_Tract_to_2020_PUMA.txt)), and rolls up to a 2010 PUMA. Apparently this was a mistake (more information about this [issue](https://www.census.gov/programs-surveys/acs/technical-documentation/table-and-geography-changes/2012/geography-changes.html) is available from the Census). *Note: a version of the 2010-2020 PUMA equivalency file is also available [here](https://mcdc.missouri.edu/data/corrlst/puma2010-to-puma2020.csv); we don't need it for this analysis though.*
+
+```{r analyze-missings, message = F}
+# get vector of unique tract IDs from joined that are missing corrsponding PUMA7
+missings <- joined %>% 
+  filter(is.na(PUMA7)) %>% 
+  distinct(TRACT11) %>% 
+  deframe()
+
+# load 2020 xwalk and check to make sure that it contains the missing tract
+xwalk20 <- fread(
+  "https://www2.census.gov/geo/docs/maps-data/data/rel2020/2020_Census_Tract_to_2020_PUMA.txt",
+  colClasses = 'character', 
+  data.table = T) %>% 
+  filter(STATEFP == "06") %>% 
+  mutate(TRACT11 = paste0(STATEFP, COUNTYFP, TRACTCE),
+         PUMA7 = paste0(STATEFP, PUMA5CE)) %>% 
+  dplyr::select(TRACT11, PUMA7)
+
+missings %in% xwalk20$TRACT11 
+```
+
+Let's fix our crosswalk so all tracts roll up into a PUMA. In correcting this issue, the Census removed tract `06037930401` (which rolls up to the same PUMA). We can simply overwrite `06037930401` with `06037137000` in our crosswalk, since they correspond to the same PUMA.
+
+```{r fix-missings}
+# append that row from xwalk20 to xwalk and re-run the joins
+#xwalk <- xwalk20 %>% filter(TRACT11 %in% missings) %>% rbind(xwalk)
+
+xwalk[xwalk == "06037930401"] <- "06037137000"
+
+joined <- left_join(
+  race_pop_tract, 
+  xwalk,
+  by = c("GEOID" = "TRACT11")) %>% 
+  rename("TRACT11" = "GEOID")
+
+joined <- left_join(
+  joined,
+  race_pop_puma,
+  by = c("PUMA7" = "GEOID", 
+         "variable")) 
+```
