@@ -2,6 +2,7 @@
 setwd("/Users/lamhine/Documents/GitHub/cabrfss_multiracial/")
 library(tidyverse)
 library(haven)
+library(gtsummary)
 library(labelled)
 library(boxr)
 library(data.table)
@@ -19,27 +20,14 @@ lf = list.files(path="/Users/lamhine/Library/CloudStorage/Box-Box/Tracy Lam-Hine
                 full.names=TRUE)
 
 # read in 2010-2017 and 2019, 2020 BRFSS DTA files into ca_brfss list
-for (i in 1:8) {
-  ca_brfss[i] <- list(read_dta(lf[i]))
+for (i in 1:9) {
+  ca_brfss[i] <- list(read_sas(lf[i]))
   }
-
-# 2022 was sent as CSV; pull in separately and fix variable names
-ca_22 <- read_csv("/Users/lamhine/Library/CloudStorage/Box-Box/Tracy Lam-Hine's Files/brfss_disagg/ca_brfss_2000-22/2014-2022/brfs_22core.csv")
-ca_22 <- ca_22 %>% 
-  mutate(
-    ASTHEVE3 = case_when(
-      ASTHMA3 == "Yes" ~ 1, 
-      ASTHMA3 == "No" ~ 2, 
-      ASTHMA3 == "(VOL) Don't know / Not sure" ~ 7,
-      ASTHMA3 == "(VOL) Refused" ~ 9, 
-      .default = NA_real_)
-    )
-ca_22 <- ca_22 %>% rename(MRACASC1 = MRACASC2)
-ca_brfss <- append(ca_brfss, list(ca_22), after = 8)
 
 # fix mismatched element types for date 
 ca_brfss[[1]]$DATE <- mdy(ca_brfss[[1]]$DATE)
 ca_brfss[[2]]$DATE <- mdy(ca_brfss[[2]]$DATE)
+ca_brfss[[5]]$DATE <- mdy(ca_brfss[[5]]$DATE)
 ca_brfss[[6]]$DATE <- mdy(ca_brfss[[6]]$DATE)
 ca_brfss[[7]]$DATE <- mdy(ca_brfss[[7]]$DATE)
 ca_brfss[[8]]$DATE <- mdy(ca_brfss[[8]]$DATE)
@@ -49,16 +37,34 @@ ca_df <- rbindlist(ca_brfss, fill = T)
 
 
 ### 3. POST-MERGE VARIABLE DIAGNOSTICS ###
+# get a list of all variable names 
 names <- names(ca_df)
 
-# year and demographic variables
+# collapse MRACASC1 and MRACASC2
+
+# create table 1 to understand missingness and variable name changes
+table1 <- ca_df %>% 
+  tbl_summary(include = c(`_LLCPWT`, `_PSU`, `_STSTR`,  #sampling vars
+                          MRACASC1, MRACASC2, HISPANC3, #demographic vars
+                          GENHLTH, PHYSHLTH, MENTHLTH, POORHLTH, #health vars
+                          PRIMINSR, PERSDOC3, MEDCOST1, CHECKUP1, EXERANY2, 
+                          ALCDAY4, ANGINA, ASTHEVE3,    
+                          ASTHNOW, HAVEPLN3, `_RFBING5`, `_RFHLTH`, HEART2, `_MICHD`),
+              by = YEAR, 
+              missing = "ifany") %>% 
+  add_n()
+
+table1
+
+
+
+# demographic variables
 table(ca_df$YEAR, exclude = NULL)
 table(ca_df$MRACASC1, ca_df$YEAR, exclude=NULL)
 table(ca_df$HISPANC3, ca_df$YEAR, exclude=NULL)
-table(ca_df$HISPANIC, ca_df$YEAR, exclude=NULL)
 
 # health variables
-#table(ca_df$ALCDAY4, ca_df$YEAR, exclude=NULL)
+table(ca_df$ALCDAY4, ca_df$YEAR, exclude=NULL)
 table(ca_df$ANGINA, ca_df$YEAR, exclude=NULL)
 table(ca_df$ASTHEVE3, ca_df$YEAR, exclude=NULL)
 table(ca_df$ASTHNOW, ca_df$YEAR, exclude=NULL)
@@ -71,18 +77,7 @@ table(ca_df$`_MICHD`, ca_df$YEAR, exclude=NULL)
 
 ### 4. RECODE VARIABLES ### 
 
-## RECODE WEIGHTING VARIABLES ##
 
-keep(names, grepl("LLCPWT", names)) # get relevant LLCPWT variables
-keep(names, grepl("PSU", names)) # get relevant LLCPWT variables
-keep(names, grepl("STSTR", names)) # get relevant LLCPWT variables
-
-# relevant variables: A__LLCPWT, `___LLCPWT`, `_LLCPWT`
-# coalesce together the final weight variables from each year into 1 column
-ca_df <- ca_df %>% 
-  mutate(FINAL_WT = coalesce(A__LLCPWT, `___LLCPWT`, `_LLCPWT`), 
-         PSU = coalesce(A__PSU, `_PSU`, `___PSU`), 
-         STSTR = coalesce(A__STSTR, `___STSTR`, `_STSTR`))
 
 # new column with each year's proportional contribution to total sample size 
 samp_size <- ca_df %>% group_by(YEAR) %>% summarize(samp_size = n()/nrow(ca_df))
@@ -618,3 +613,26 @@ ca_df <- ca_df %>%
   )
 
 table(ca_df$hisp_hypo_text, ca_df$MRACASC1, exclude = NULL)
+
+
+
+
+
+
+
+
+
+
+# 2022 was sent as CSV; pull in separately and fix variable names
+ca_22 <- read_csv("/Users/lamhine/Library/CloudStorage/Box-Box/Tracy Lam-Hine's Files/brfss_disagg/ca_brfss_2000-22/2014-2022/brfs_22core.csv")
+ca_22 <- ca_22 %>% 
+  mutate(
+    ASTHEVE3 = case_when(
+      ASTHMA3 == "Yes" ~ 1, 
+      ASTHMA3 == "No" ~ 2, 
+      ASTHMA3 == "(VOL) Don't know / Not sure" ~ 7,
+      ASTHMA3 == "(VOL) Refused" ~ 9, 
+      .default = NA_real_)
+  )
+ca_22 <- ca_22 %>% rename(MRACASC1 = MRACASC2)
+ca_brfss <- append(ca_brfss, list(ca_22), after = 8)
