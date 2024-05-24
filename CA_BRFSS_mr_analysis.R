@@ -1,5 +1,5 @@
 ### 1. SET WORKING DIRECTORY, LOAD PACKAGES ###
-setwd("/Users/lamhine/Documents/GitHub/cabrfss_multiracial/")
+setwd("/Users/lamhine/Documents/GitHub/brfss_disagg/")
 library(tidyverse)
 library(haven)
 library(gtsummary)
@@ -24,7 +24,7 @@ for (i in 1:9) {
   ca_brfss[i] <- list(read_sas(lf[i]))
   }
 
-# fix mismatched element types for date 
+# fix mismatched element types for date to enable rbind
 ca_brfss[[1]]$DATE <- mdy(ca_brfss[[1]]$DATE)
 ca_brfss[[2]]$DATE <- mdy(ca_brfss[[2]]$DATE)
 ca_brfss[[5]]$DATE <- mdy(ca_brfss[[5]]$DATE)
@@ -33,59 +33,133 @@ ca_brfss[[7]]$DATE <- mdy(ca_brfss[[7]]$DATE)
 ca_brfss[[8]]$DATE <- mdy(ca_brfss[[8]]$DATE)
 
 # bind all list elements into one df 
-ca_df <- rbindlist(ca_brfss, fill = T)
+ca_bind <- rbindlist(ca_brfss, fill = T)
 
 
-### 3. POST-MERGE VARIABLE DIAGNOSTICS ###
-# get a list of all variable names 
-names <- names(ca_df)
+### 3. DATA CLEANING ###
+# subset to variables needed
+ca_df <- ca_bind %>% 
+  dplyr::select(
+    `_LLCPWT`, `_PSU`, `_STSTR`, YEAR,  #sampling vars
+    AGE, EDUCA, # age, education
+    EMPLOY2, EMPLOY1, # employment
+    INCOM02, INCOM03, INCOME3, # income
+    MARITAL, `_CHLDCNT`, # marital status, number of children
+    OWNHOME, RENTHOM1, # own/rent home
+    SEX, SEX1, SEX2, BIRTHSEX, # sex
+    MRACASC1, MRACASC2, HISPANC3, # race/ethnicity
+    DRNKANY5, DRNKANY6, # any drinks in last 30 days
+    `_RFBING5`, `_RFBING6`, # binge drinking calculated
+    ASTHEVE3, ASTHMA3, ASTHNOW, # lifetime/current asthma
+    ANGINA, CVDCRHD4, # ever diagnosed with angina or CVD
+    HEART2, CVDINFR4, # ever had heart attack
+    COPDEVER, CHCCOPD3, # diagnosed with COPD/emphysema/chronic bronchitis
+    DEPRESS1, ADDEPEV3, # diagnosed with depressive disorder
+    DIABCOR3, DIABETE4, # ever diagnosed with diabetes or pre-diabetes
+    KIDNEY, CHCKDNY2, # ever had trouble with kidney or told had kidney disease
+    SKCANC, CHCSCNC1, # ever diagnosed with skin cancer
+    HAVEPLN3, `_HLTHPLN`, # have any health insurance
+    `_HCVU651`, `_HCVU652`, # under 65 with health insurance      
+    CHECKUP2, CHECKUP1, # time since last routine checkup
+    PERSDOC, PERSDOC3, # have primary care provider
+    GENHLTH, PHYSHLTH, MENTHLTH, # overall health status
+    AIDSTST8, AIDSTST9, HIVTST7, # HIV test history
+    FLUSHOT6,FLUSHOT7, # influenza shot history
+    PNEUMVC3,PNEUMVC4, # pneumonia vaccine history
+    `_RFBMI5`, # overweight or obese calculated variable
+    EXERANY1, EXERANY2, # physical activity in last 30 days other than job
+    `_SMOKER3`, USENOW3, # smoker/current use of smokeless tobacco
+    BLIND, # blind or difficulty seeing
+    REMEM2, DECIDE, # difficulty concentrating or remembering
+    DIFFERND, DIFFALON, # difficulty doing errands alone
+    DIFDRES2, DIFFDRES, # difficulty dressing or bathing
+    DIFFWALK # difficulty walking or climbing stairs
+  )
 
-# collapse MRACASC1 and MRACASC2
+# coalesce variables from the 2014-2021 and 2022 data sets and rename
+ca_df <- ca_df %>% 
+  mutate(
+    sex = coalesce(SEX, SEX1, SEX2, BIRTHSEX),
+    race = coalesce(MRACASC1, MRACASC2),
+    employ = coalesce(EMPLOY1, EMPLOY2),
+    income = coalesce(INCOM02, INCOM03, INCOME3),
+    ownhome = coalesce(OWNHOME, RENTHOM1),
+    ast_lt = coalesce(ASTHEVE3, ASTHMA3),
+    apcvd = coalesce(ANGINA, CVDCRHD4),
+    mi = coalesce(HEART2, CVDINFR4),
+    copd = coalesce(COPDEVER, CHCCOPD3),
+    mdd = coalesce(DEPRESS1, ADDEPEV3),
+    dm = coalesce(DIABCOR3, DIABETE4), 
+    ckd = coalesce(KIDNEY, CHCKDNY2),
+    bcc = coalesce(SKCANC, CHCSCNC1),
+    exercise = coalesce(EXERANY1, EXERANY2),
+    drink_any = coalesce(DRNKANY5, DRNKANY6),
+    drink_binge = coalesce(`_RFBING5`, `_RFBING6`),
+    hiv_test = coalesce(AIDSTST8, AIDSTST9, HIVTST7),
+    laiv = coalesce(FLUSHOT6,FLUSHOT7), 
+    pcv = coalesce(PNEUMVC3,PNEUMVC4),
+    dis_conc = coalesce(REMEM2, DECIDE),
+    dis_err = coalesce(DIFFERND, DIFFALON),
+    dis_dress = coalesce(DIFDRES2, DIFFDRES),
+    ins_any = coalesce(HAVEPLN3, `_HLTHPLN`),
+    ins_u65 = coalesce(`_HCVU651`, `_HCVU652`),
+    pe_last = coalesce(CHECKUP2, CHECKUP1),
+    pcp = coalesce(PERSDOC, PERSDOC3)) %>% 
+  dplyr::select(-c(
+    SEX, SEX1, SEX2, BIRTHSEX, MRACASC1, MRACASC2, EMPLOY1, EMPLOY2,
+    INCOM02, INCOM03, INCOME3, OWNHOME, RENTHOM1, ASTHEVE3, ASTHMA3, ANGINA, 
+    CVDCRHD4, HEART2, CVDINFR4, COPDEVER, CHCCOPD3, DEPRESS1, ADDEPEV3, 
+    DIABCOR3, DIABETE4, KIDNEY, CHCKDNY2, SKCANC, CHCSCNC1, EXERANY1, EXERANY2,
+    DRNKANY5, DRNKANY6, `_RFBING5`, `_RFBING6`, AIDSTST8, AIDSTST9, HIVTST7,
+    FLUSHOT6, FLUSHOT7, PNEUMVC3, PNEUMVC4, REMEM2, DECIDE, DIFFERND, DIFFALON,
+    DIFDRES2, DIFFDRES, HAVEPLN3, `_HLTHPLN`, `_HCVU651`, `_HCVU652`, CHECKUP2, 
+    CHECKUP1, PERSDOC, PERSDOC3)) %>% 
+  rename(
+    LLCPWT = `_LLCPWT`,
+    PSU = `_PSU`,
+    STSTR = `_STSTR`,
+    age = AGE,
+    hisp = HISPANC3,
+    edu = EDUCA,
+    marital = MARITAL,
+    children = `_CHLDCNT`,
+    hlth_gen = GENHLTH,
+    hlth_phys = PHYSHLTH,
+    hlth_ment = MENTHLTH,
+    ast_now = ASTHNOW,
+    bmi_cat = `_RFBMI5`,
+    smoke = `_SMOKER3`,
+    smokeless = USENOW3,
+    vip = BLIND,
+    dis_walk = DIFFWALK
+    ) 
 
-# create table 1 to understand missingness and variable name changes
+# create table 1 
 table1 <- ca_df %>% 
-  tbl_summary(include = c(`_LLCPWT`, `_PSU`, `_STSTR`,  #sampling vars
-                          MRACASC1, MRACASC2, HISPANC3, #demographic vars
-                          GENHLTH, PHYSHLTH, MENTHLTH, POORHLTH, #health vars
-                          PRIMINSR, PERSDOC3, MEDCOST1, CHECKUP1, EXERANY2, 
-                          ALCDAY4, ANGINA, ASTHEVE3,    
-                          ASTHNOW, HAVEPLN3, `_RFBING5`, `_RFHLTH`, HEART2, `_MICHD`),
-              by = YEAR, 
-              missing = "ifany") %>% 
-  add_n()
+  tbl_summary(
+    include = c(
+      age, sex, race, hisp, 
+      edu, employ, income, marital, children, ownhome, 
+      hlth_gen, hlth_phys, hlth_ment, 
+      ast_lt, ast_now, apcvd, mi, copd, mdd, dm, ckd, bcc, 
+      bmi_cat, exercise, smoke, smokeless, drink_any, drink_binge, 
+      hiv_test, laiv, pcv, vip, 
+      dis_conc, dis_err, dis_dress, dis_walk, 
+      ins_any, ins_u65, pe_last, pcp),  
+    by = YEAR,
+    missing = "ifany") 
 
 table1
 
 
 
-# demographic variables
-table(ca_df$YEAR, exclude = NULL)
-table(ca_df$MRACASC1, ca_df$YEAR, exclude=NULL)
-table(ca_df$HISPANC3, ca_df$YEAR, exclude=NULL)
-
-# health variables
-table(ca_df$ALCDAY4, ca_df$YEAR, exclude=NULL)
-table(ca_df$ANGINA, ca_df$YEAR, exclude=NULL)
-table(ca_df$ASTHEVE3, ca_df$YEAR, exclude=NULL)
-table(ca_df$ASTHNOW, ca_df$YEAR, exclude=NULL)
-table(ca_df$HAVEPLN3, ca_df$YEAR, exclude=NULL)
-table(ca_df$`_RFBING5`, ca_df$YEAR, exclude=NULL)
-table(ca_df$`_RFHLTH`, ca_df$YEAR, exclude=NULL)
-table(ca_df$MENTHLTH, ca_df$YEAR, exclude=NULL)
-table(ca_df$HEART2, ca_df$YEAR, exclude=NULL)
-table(ca_df$`_MICHD`, ca_df$YEAR, exclude=NULL)
 
 ### 4. RECODE VARIABLES ### 
 
 
 
-# new column with each year's proportional contribution to total sample size 
-samp_size <- ca_df %>% group_by(YEAR) %>% summarize(samp_size = n()/nrow(ca_df))
-ca_df <- left_join(ca_df, samp_size)
 
-# adjust final weight variable to reflect proportional sample size
-ca_df <- ca_df %>% 
-  mutate(FINAL_WT = FINAL_WT/samp_size)
+
 
 ## RECODE DEMOGRAPHIC VARIABLES ## 
  
@@ -103,8 +177,8 @@ reorder_digits <- function(num) {
 # recode hispanic variable to group together digit permutations
 ca_df <- ca_df %>% 
   mutate(
-    HISPANC3 = as.numeric(HISPANC3),
-    HISPANIC = sapply(HISPANC3, reorder_digits)
+    hisp = as.numeric(hisp),
+    hisp = sapply(hisp, reorder_digits)
   )
 
 # Coerce MRACASC1 and HISPANC3 to character
@@ -204,10 +278,17 @@ ca_df <- ca_df %>%
 
 
 ## 4. CALCULATE WEIGHTED PREVALENCE BY GROUP ##  
+
+# new column with each year's proportional contribution to total sample size 
+samp_size <- ca_df %>% group_by(YEAR) %>% summarize(samp_size = n()/nrow(ca_df))
+ca_df <- left_join(ca_df, samp_size, by = "YEAR")
+
+# divide LLCPWT by sample size to calculate final weight variable 
+ca_df <- ca_df %>% mutate(final_wt = LLCPWT/samp_size) %>% select(-samp_size)
+
 # Create complex survey design 
-ca_dsn_ast <- ca_df %>% 
-  dplyr::select(PSU, STSTR, FINAL_WT, race_eth_col_lab, race_eth_text, ASTHEVE3) %>% 
-  as_survey_design(id = PSU, strata = STSTR, weights = FINAL_WT)
+ca_dsn <- ca_df %>% 
+  as_survey_design(id = 1, strata = STSTR, weights = final_wt)
 
 
 # calculate prevalence by group, remove Other/DK/Refused & groups with n<30  
