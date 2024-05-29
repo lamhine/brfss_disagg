@@ -1,10 +1,12 @@
 ### 1. SET WORKING DIRECTORY, LOAD PACKAGES ###
 setwd("/Users/lamhine/Documents/GitHub/brfss_disagg/")
+options(scipen = 999)
 library(tidyverse)
 library(haven)
 library(gtsummary)
 library(labelled)
 library(boxr)
+library(UpSetR)
 library(data.table)
 library(foreign)
 library(survey)
@@ -134,32 +136,23 @@ ca_df <- ca_df %>%
     dis_walk = DIFFWALK
     ) 
 
-# create table 1 
-table1 <- ca_df %>% 
-  tbl_summary(
-    include = c(
-      age, sex, race, hisp, 
-      edu, employ, income, marital, children, ownhome, 
-      hlth_gen, hlth_phys, hlth_ment, 
-      ast_lt, ast_now, apcvd, mi, copd, mdd, dm, ckd, bcc, 
-      bmi_cat, exercise, smoke, smokeless, drink_any, drink_binge, 
-      hiv_test, laiv, pcv, vip, 
-      dis_conc, dis_err, dis_dress, dis_walk, 
-      ins_any, ins_u65, pe_last, pcp),  
-    by = YEAR,
-    missing = "ifany") 
+# Recode variables
+ca_df <- ca_df %>% 
+  mutate(
+    sex = as.factor(sex),
+    race = as.factor(race),
+    #hisp = as.factor(hisp),
+    edu = as.factor(edu)
+    
+  )
 
-table1
+
+
 
 
 
 
 ### 4. RECODE VARIABLES ### 
-
-
-
-
-
 
 ## RECODE DEMOGRAPHIC VARIABLES ## 
  
@@ -184,100 +177,189 @@ ca_df <- ca_df %>%
 # Coerce MRACASC1 and HISPANC3 to character
 ca_df <- ca_df %>% 
   mutate(
-    MRACASC1 = as.character(MRACASC1),
-    HISPANIC = as.character(HISPANIC)
+    race = as.character(race),
+    hisp = as.character(hisp)
   )
 
-# recode "44" as "40" when in combination with other races
+# recode data entry inconsistencies ("44" when in combination and "5050")
 ca_df <- ca_df %>% 
   mutate(
-    MRACASC1 = case_when(
-      MRACASC1 == "1044" ~ "1040",
-      MRACASC1 == "4044" ~ "40",
-      MRACASC1 == "4460" ~ "4060",
-      TRUE ~ MRACASC1)
+    race = case_when(
+      race == "1044" ~ "1040",
+      race == "4044" ~ "40",
+      race == "4460" ~ "4060",
+      race == "5050" ~ "50",
+      TRUE ~ race)
   )
 
-# Create race text variable  
+# categories for number of races 
 ca_df <- ca_df %>% 
   mutate(
-    race_text = case_when(
-      MRACASC1 == "10" ~ "White-",
-      MRACASC1 == "20" ~ "Black-",
-      MRACASC1 == "30" ~ "AIAN-",
-      MRACASC1 == "40" ~ "Asian-",
-      MRACASC1 == "41" ~ "Asian Indian-",
-      MRACASC1 == "42" ~ "Chinese-",
-      MRACASC1 == "43" ~ "Filipino-",
-      MRACASC1 == "44" ~ "Japanese-",
-      MRACASC1 == "45" ~ "Korean-",
-      MRACASC1 == "46" ~ "Vietnamese-",
-      MRACASC1 == "47" ~ "Other Asian-",
-      MRACASC1 == "50" ~ "Pacific Islander-",
-      MRACASC1 == "51" ~ "Native Hawaiian-",
-      MRACASC1 == "52" ~ "Guamanian-",
-      MRACASC1 == "53" ~ "Samoan-",
-      MRACASC1 == "54" ~ "Other Pacific Islander-",
-      MRACASC1 == "60" ~ "OtherRace-",
-      is.na(MRACASC1) ~ "DK/O/R-",
-      MRACASC1 %in% c("77", "88", "99") ~ "DK/O/R-",
-      TRUE ~ MRACASC1),
+    race_ct = case_when(
+      race %in% c("60", "77", "88", "99") ~ 0,
+      is.na(race) ~ 0,
+      str_length(race) > 2 ~ 2, 
+      TRUE ~ 1)
+    )
+
+# categories for non-, single- and multiple-group hispanic participants
+ca_df <- ca_df %>% 
+  mutate(
+    hisp_ct = case_when(
+      hisp %in% c("5","7","77","9","99") ~ 0,
+      hisp %in% c("1","2","3","4") ~ 1,
+      TRUE ~ 2)
+    )
+
+# Create race_text variable 
+ca_df <- ca_df %>% 
+  mutate(
+    race_text = race,
     race_text = str_replace_all(race_text, "10", "White-"),
     race_text = str_replace_all(race_text, "20", "Black-"),
     race_text = str_replace_all(race_text, "30", "AIAN-"),
     race_text = str_replace_all(race_text, "40", "Asian-"),
+    race_text = str_replace_all(race_text, "41", "Asian Indian-"),
+    race_text = str_replace_all(race_text, "42", "Chinese-"),
+    race_text = str_replace_all(race_text, "43", "Filipino-"),
+    race_text = str_replace_all(race_text, "44", "Japanese-"),
+    race_text = str_replace_all(race_text, "45", "Korean-"),
+    race_text = str_replace_all(race_text, "46", "Vietnamese-"),
+    race_text = str_replace_all(race_text, "47", "Other Asian-"),
     race_text = str_replace_all(race_text, "50", "Pacific Islander-"),
+    race_text = str_replace_all(race_text, "51", "Native Hawaiian-"),
+    race_text = str_replace_all(race_text, "52", "Guamanian-"),
+    race_text = str_replace_all(race_text, "53", "Samoan-"),
     race_text = str_replace_all(race_text, "54", "Other Pacific Islander-"),
-    race_text = str_replace_all(race_text, "60", "OtherRace-")
-  )
+    race_text = str_replace_all(race_text, "60", "Other Race-"),
+    race_text = str_replace_all(race_text, "77|88|99", "DK/R-"),
+    race_text = str_replace_na(race_text, "DK/R-"),
+    race_text = case_when(
+      str_detect(race_text, "Other Race-|DK/R-") & hisp_ct %in% c(1,2) ~ str_remove(race_text, "Other Race-|DK/R-"),
+      TRUE ~ race_text
+    )
+  ) 
 
+ca_df %>% group_by(race,race_text,race_ct) %>% summarize(n=n()) %>% View()
+
+# Create hisp_text variable for detailed Hispanic ethnicity
 ca_df <- ca_df %>% 
   mutate(
-    hisp_text = case_when(
-      HISPANIC %in% c("5", "7", "77", "9", "99") ~ "",
-      TRUE ~ HISPANIC),
+    hisp_text = hisp,
     hisp_text = str_replace_all(hisp_text, "1", "Mexican-"),
     hisp_text = str_replace_all(hisp_text, "2", "Puerto Rican-"),
     hisp_text = str_replace_all(hisp_text, "3", "Cuban-"),
-    hisp_text = str_replace_all(hisp_text, "4", "Other Hispanic-"), 
-    hisp_text = str_replace_all(hisp_text, "5", ""),
-    hisp_text = str_replace_all(hisp_text, "4", "Other Hispanic-")
-    )
-
-ca_df <- ca_df %>% 
-  mutate(race_eth_text = paste0(race_text,hisp_text)) %>% 
-  dplyr::select(-c("race_text", "hisp_text"))
-
-
-# Remove trailing "-" characters
-ca_df <- ca_df %>% 
-  mutate(
-    race_eth_text = case_when(
-      str_sub(race_eth_text, -1) == "-" ~ str_sub(race_eth_text, 1, -2),
-      TRUE ~ race_eth_text
-    )
+    hisp_text = str_replace_all(hisp_text, "4", "Other Hispanic-"),
+    hisp_text = str_replace_all(hisp_text, "5|7|77|9|99", "")
   )
 
-table(ca_df$race_eth_text, ca_df$YEAR, exclude = NULL)
+ca_df %>% group_by(hisp,hisp_text,hisp_ct) %>% summarize(n=n()) %>% View()
+
+
+# Create combined race-ethnicity variable, collapsing to highest group level 
+# for multiracial and multiple Hispanic group participants 
+
+ca_df %>% group_by(race,race_text,race_ct,hisp,hisp_text,hisp_ct) %>% summarize(n=n()) %>% View()
+
+ca_df <- ca_df %>% 
+  mutate(
+    re_text_full = paste0(race_text, hisp_text),
+    re_text = case_when(
+      race_ct == 0 & hisp_ct == 0 ~ paste0(race_text, hisp_text),
+      race_ct == 0 & hisp_ct == 1 ~ paste0(race_text, hisp_text),
+      race_ct == 0 & hisp_ct == 2 ~ "Multiple Hispanic-",
+      race_ct == 1 & hisp_ct == 0 ~ paste0(race_text, hisp_text),
+      race_ct == 1 & race_text == "White-" & hisp_ct %in% c(1,2) ~ paste0("White-", "Hispanic-"),
+      race_ct == 1 & race_text == "Black-" & hisp_ct %in% c(1,2) ~ paste0("Black-", "Hispanic-"),
+      race_ct == 1 & race_text == "AIAN-" & hisp_ct %in% c(1,2) ~ paste0("AIAN-", "Hispanic-"),
+      race_ct == 1 & race_text %in% c("Asian-", "Asian Indian-", "Chinese-", "Filipino-", "Japanese-", "Korean-", "Vietnamese-", "Other Asian-") & hisp_ct %in% c(1,2) ~ paste0("Asian-", "Hispanic-"),
+      race_ct == 1 & race_text %in% c("Pacific Islander-", "Native Hawaiian-", "Guamanian-", "Samoan-", "Other Pacific Islander-") & hisp_ct %in% c(1,2) ~ paste0("Pacific Islander-", "Hispanic-"),
+      race_ct == 2 & hisp_ct == 0 ~ paste0(race_text, hisp_text),
+      race_ct == 2 & hisp_ct %in% c(1,2) ~ paste0(race_text, "Hispanic-")
+      )
+    )
+
+
+ca_df %>% group_by(re_text) %>% summarize(n=n()) %>% View()
+
+# Get dataframe of group counts and identify groups with n < 50
+lt50_df <- ca_df %>% 
+  group_by(re_text) %>% 
+  summarize (n = n()) %>% 
+  mutate(
+    lt50 = 
+      case_when(
+        n < 50 ~ 1,
+        TRUE ~ 0)) %>% 
+  ungroup()
+
+# use hypodescent model based on group size to classify remaining Multiracial participants
+lt50_df <- lt50_df %>% 
+  mutate(
+    lt50_ra = 
+      case_when(
+        re_text == "Native Hawaiian-" ~ "Pacific Islander-",
+        re_text == "Guamanian-" ~ "Pacific Islander-",
+        re_text == "Cuban-" ~ "Other Hispanic-",
+        lt50 == 1 & str_detect(re_text, "Pacific Islander") ~ "Other Multiracial Pacific Islander-", 
+        lt50 == 1 & str_detect(re_text, "AIAN") ~ "Other Multiracial AIAN-",
+        lt50 == 1 & str_detect(re_text, "Black") ~ "Other Multiracial Black-",
+        #lt50 == 1 & str_detect(re_text, "Hispanic") ~ "Other Multiracial Hispanic-",
+        lt50 == 1 & str_detect(re_text, "Asian") ~ "Other Multiracial Asian-",
+        TRUE ~ re_text)
+    ) %>% 
+  select(-c("n", "lt50"))
+
+# join in new lt50_ra2 variable
+ca_df <- left_join(ca_df, lt50_df, by = "re_text") 
+
+# remove trailing "-" characters
+ca_df <- ca_df %>% 
+  mutate(
+    lt50_ra = case_when(
+      str_sub(lt50_ra, -1) == "-" ~ str_sub(lt50_ra, 1, -2),
+      TRUE ~ lt50_ra)
+    )
+
+# check group counts
+ca_df %>% 
+  group_by(lt50_ra) %>% 
+  summarize (n = n()) %>% View()
+
 
 ## Create summary group color labels
 ca_df <- ca_df %>% 
   mutate(
-    race_eth_col_lab = case_when(
-      !HISPANIC %in% c("5", "7", "77", "9", "99") ~ "Hispanic",
-      MRACASC1 == "10" ~ "White",
-      MRACASC1 == "20" ~ "Black",
-      MRACASC1 == "30" ~ "AIAN",
-      MRACASC1 %in% c("40", "41", "42", "43", "44", "45", "46", "47") ~ "Asian", 
-      MRACASC1 %in% c("50", "51", "52", "53", "54") ~ "NHPI",
-      is.na(MRACASC1) ~ "DK/O/R",
-      MRACASC1 %in% c("60", "77", "88", "99") ~ "DK/O/R",
+    re_col_lab = case_when(
+      str_detect(lt50_ra, "Mexican|Puerto Rican|Cuban|Hispanic") ~ "Hispanic",
+      lt50_ra == "White" ~ "White",
+      lt50_ra == "Black" ~ "Black",
+      lt50_ra == "AIAN" ~ "AIAN",
+      lt50_ra %in% c("Asian", "Asian Indian", "Chinese", "Filipino", "Japanese", "Korean", "Vietnamese", "Other Asian") ~ "Asian", 
+      lt50_ra %in% c("Pacific Islander", "Native Hawaiian", "Guamanian", "Samoan", "Other Pacific Islander") ~ "NHPI",
+      lt50_ra == "Other Race" ~ "Other Race",
+      lt50_ra == "DK/R" ~ "DK/R",
       TRUE ~ "Multiracial"
     )
   )
 
+# need to recode all other demographic variables now
 
-## 4. CALCULATE WEIGHTED PREVALENCE BY GROUP ##  
+## RECODE HEALTH VARIABLES ##
+
+# recode asthma
+ca_df <- ca_df %>% 
+  mutate(
+    ast_lt = as.numeric(ast_lt),
+    ast_lt = 
+      case_when(
+        ast_lt == 2 ~ 0,
+        ast_lt %in% c(7, 9, 77, 99) ~ NA_real_,
+        TRUE ~ ast_lt
+    )
+  )
+
+## 4. CREATE COMPLEX SURVEY DESIGN ##  
 
 # new column with each year's proportional contribution to total sample size 
 samp_size <- ca_df %>% group_by(YEAR) %>% summarize(samp_size = n()/nrow(ca_df))
@@ -290,32 +372,108 @@ ca_df <- ca_df %>% mutate(final_wt = LLCPWT/samp_size) %>% select(-samp_size)
 ca_dsn <- ca_df %>% 
   as_survey_design(id = 1, strata = STSTR, weights = final_wt)
 
+## 5. CALCULATE WEIGHTED PREVALENCE BY GROUP ## 
 
-# calculate prevalence by group, remove Other/DK/Refused & groups with n<30  
+# calculate prevalence by group, remove Other/DK/Refused 
+ast_prev <- ca_dsn %>% 
+  filter(!re_col_lab %in% c("Other Race", "DK/R")) %>% 
+  group_by(lt50_ra, re_col_lab) %>% 
+  summarize(
+    n = n(),
+    asthma = survey_mean(ast_lt, na.rm = T, vartype = "ci", level = 0.95, proportion = T, prop_method = "logit", df = T)*100)
 
-#brfss_dsn %>% 
-#  group_by(race_eth_text, race_eth_col_lab) %>% 
-#  summarize(asthma = survey_mean(ATHEVE3, na.rm = T, vartype = "ci", level = 0.95, proportion = T, prop_method = "logit", df = T)*100)
-
-
-asthma_prevs <- ca_dsn_ast %>% 
-  group_by(race_eth_text, race_eth_col_lab) %>% 
-  summarize(asthma = survey_mean(ASTHEVE3, na.rm = T, vartype = "ci", level = 0.95, proportion = T, prop_method = "logit", df = T)*100, 
-            n = n()) %>% 
-  #filter(n >= 50, 
-  #       race_eth_col_lab != "DK/Other/Refused") %>% 
-  select(-n) 
-
-ggplot(asthma_prevs, aes(x=race_eth_col_lab, y=asthma))+
-  geom_pointrange(aes(ymin=asthma_low, ymax=asthma_upp, color = hisp_hypo_text),
-                  position=position_dodge(width = 0.5)) + 
+# BEST WORKING EXAMPLE
+ggplot(ast_prev, 
+       aes(x=reorder(lt50_ra,asthma),
+           y=asthma)) +
+  geom_pointrange(
+    fatten = 0.5,
+    aes(ymin=asthma_low, 
+        ymax=asthma_upp, 
+        color=re_col_lab)) + 
+  geom_point(
+    aes(size = n, color = re_col_lab), 
+    alpha = 0.6) +
+  scale_size_area(max_size = 5) + 
+  coord_cartesian(clip = "off") +
   geom_text_repel(
-    aes(label = hisp_hypo_text),
+    aes(label = lt50_ra),
+    color = "black",
+    size = 4,
+    max.overlaps = Inf) +
+  ylab("Prevalence") +
+  scale_x_discrete(breaks = NULL) +
+  theme_bw() + 
+  theme(legend.position="none",
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  facet_grid(~re_col_lab, scales = "free_x", space = "free_x")
+
+
+# PREVIOUS DOT PLOT
+
+ggplot(
+  data = ast_prev,
+  aes(x = re_col_lab,
+      y = asthma)) + 
+  geom_point(
+    aes(size = n, color = re_col_lab), 
+    alpha = 0.6) +
+  scale_size_area(max_size = 30) + 
+  geom_text_repel(
+    aes(label = lt50_ra2),
     color = "black") +
   xlab("") +
   ylab("Prevalence") +
   theme_bw() + 
   scale_color_discrete(name="Race")
+
+
+# OTHERS
+
+ggplot(ast_prev) +
+  geom_pointrange(
+    aes(ymin=asthma_low, ymax=asthma_upp, x=lt50_ra2, y=asthma, color=re_col_lab, group=re_col_lab)) + 
+  #position=position_dodge(width = 0.8) + 
+  #geom_text_repel(
+  #  aes(label = lt50_ra2),
+  #  color = "black",
+  #  max.overlaps = Inf) +
+  xlab("") +
+  ylab("Prevalence") +
+  theme_bw() + 
+  scale_color_discrete(name="Race")
+
+ggplot(ast_prev, aes(x=re_col_lab, y=asthma)) +
+  geom_pointrange(
+    aes(ymin=asthma_low, ymax=asthma_upp, color = re_col_lab),
+    position=position_dodge(width = 0.8)) + 
+  geom_text_repel(
+    aes(label = lt50_ra2),
+    color = "black",
+    max.overlaps = Inf) +
+  xlab("") +
+  ylab("Prevalence") +
+  theme_bw() + 
+  scale_color_discrete(name="Race")
+
+
+ggplot(ast_prev, aes(x=re_col_lab, y=asthma)) +
+  geom_pointrange(
+    aes(ymin=asthma_low, ymax=asthma_upp, color = re_col_lab),
+    position=position_dodge(width = 0.8)) + 
+  geom_text_repel(
+    aes(label = lt50_ra2),
+    color = "black",
+    max.overlaps = Inf) +
+  xlab("") +
+  ylab("Prevalence") +
+  theme_bw() + 
+  scale_color_discrete(name="Race")
+
+
+
 
 
 ## 5. PLOT PREVALENCES ## 
@@ -338,9 +496,39 @@ plot_asthma <- ggplot(
 
 
 
+# create unweighted table 1 
+table1_unw <- ca_df %>% 
+  tbl_summary(
+    include = c(
+      age, sex, re_mrc_lt50.2,  
+      edu, employ, income, marital, children, ownhome, 
+      hlth_gen, hlth_phys, hlth_ment, 
+      ast_lt, ast_now, apcvd, mi, copd, mdd, dm, ckd, bcc, 
+      bmi_cat, exercise, smoke, smokeless, drink_any, drink_binge, 
+      hiv_test, laiv, pcv, vip, 
+      dis_conc, dis_err, dis_dress, dis_walk, 
+      ins_any, ins_u65, pe_last, pcp),  
+    by = YEAR,
+    missing = "ifany") 
 
+table1_unw
 
+# create table 1 
+table1_svy <- ca_dsn %>% 
+  tbl_svysummary(
+    include = c(
+      age, sex, re_mrc_lt50.2, 
+      edu, employ, income, marital, children, ownhome, 
+      hlth_gen, hlth_phys, hlth_ment, 
+      ast_lt, ast_now, apcvd, mi, copd, mdd, dm, ckd, bcc, 
+      bmi_cat, exercise, smoke, smokeless, drink_any, drink_binge, 
+      hiv_test, laiv, pcv, vip, 
+      dis_conc, dis_err, dis_dress, dis_walk, 
+      ins_any, ins_u65, pe_last, pcp),  
+    by = YEAR,
+    missing = "ifany") 
 
+table1_svy
 
 
 
@@ -717,3 +905,102 @@ ca_22 <- ca_22 %>%
   )
 ca_22 <- ca_22 %>% rename(MRACASC1 = MRACASC2)
 ca_brfss <- append(ca_brfss, list(ca_22), after = 8)
+
+
+
+
+
+
+ca_df <- ca_df %>% 
+  mutate(
+    hisp_text_mrc = case_when(
+      hisp == "1" ~ "Mexican", 
+      hisp == "2" ~ "Puerto Rican", 
+      hisp == "3" ~ "Cuban", 
+      hisp == "4" ~ "Other Hispanic", 
+      hisp %in% c("5","7","77","9","99") ~ "",
+      TRUE ~ "Multiple Hispanic"),
+    hisp_text_mre = case_when(
+      hisp %in% c("5","7","77","9","99") ~ "",
+      TRUE ~ hisp),
+    hisp_text_mre = str_replace_all(hisp_text_mre, "1", "Mexican-"),
+    hisp_text_mre = str_replace_all(hisp_text_mre, "2", "Puerto Rican-"),
+    hisp_text_mre = str_replace_all(hisp_text_mre, "3", "Cuban-"),
+    hisp_text_mre = str_replace_all(hisp_text_mre, "4", "Other Hispanic-"), 
+    hisp_text_mre = str_replace_all(hisp_text_mre, "5", "")
+  )
+
+
+
+
+
+# Create new race-ethnicity variables 
+# *_mrc = collapsed ethnicity for Multiracial
+# *_mre = detailed ethnicity for Multiracial
+ca_df <- ca_df %>% 
+  mutate(
+    # MRC variable
+    re_mrc = paste0(race_text_mrc, hisp_text_mrc),
+    re_mrc = case_when(
+      !hisp %in% c("5","7","77","9","99") ~ 
+        str_remove(re_mrc, "Other Race-"),
+      TRUE ~ re_mrc), 
+    re_mrc = case_when(
+      !hisp %in% c("5","7","77","9","99") ~ 
+        str_remove(re_mrc, "DK/O/R-"),
+      TRUE ~ re_mrc), 
+    re_mrc = case_when(
+      str_sub(re_mrc, -1) == "-" ~ str_sub(re_mrc, 1, -2),
+      TRUE ~ re_mrc),
+    
+    # MRE variable
+    re_mre = paste0(race_text_mre, hisp_text_mre),
+    re_mre = case_when(
+      !hisp %in% c("5","7","77","9","99") ~ 
+        str_remove(re_mre, "Other Race-"),
+      TRUE ~ re_mre), 
+    re_mre = case_when(
+      !hisp %in% c("5","7","77","9","99") ~ 
+        str_remove(re_mre, "DK/O/R-"),
+      TRUE ~ re_mre), 
+    re_mre = case_when(
+      str_sub(re_mre, -1) == "-" ~ str_sub(re_mre, 1, -2),
+      TRUE ~ re_mre)
+    
+  ) %>% 
+  dplyr::select(-c("race_text_mrc", "race_text_mre", "hisp_text_mrc", "hisp_text_mre")) 
+
+
+
+
+# reaggregate by hierarchical race/ethnicity for all groups with n < 50 
+lt50_df <- lt50_df %>% 
+  mutate(
+    lt50_ra = re_text,
+    lt50_ra = case_when(
+      lt50 == 1 ~ str_replace_all(lt50_ra, "Asian Indian|Chinese|Filipino|Japanese|Korean|Vietnamese|Other Asian", "Asian"),
+      TRUE ~ lt50_ra),
+    lt50_ra = case_when(
+      lt50 == 1 ~ str_replace_all(lt50_ra, "Native Hawaiian|Guamanian|Samoan|Other Pacific Islander", "Pacific Islander"),
+      TRUE ~ lt50_ra),
+    lt50_ra = case_when(
+      lt50 == 1 ~ str_replace_all(lt50_ra, "Mexican|Puerto Rican|Cuban|Other Hispanic", "Hispanic"),
+      TRUE ~ lt50_ra),
+    lt50_ra = str_replace_all(lt50_ra, "Hispanic-Hispanic-Hispanic-Hispanic-|Hispanic-Hispanic-Hispanic-|Hispanic-Hispanic-", "Hispanic-")
+  ) %>% 
+  select(-c("n", "lt50"))
+
+
+# join in new race_eth_lt50 variable
+ca_df <- left_join(ca_df, lt50_df, by = "re_text")
+
+# get second count of groups using new re_mrc_lt50 variable
+lt50_df2 <- ca_df %>% 
+  group_by(lt50_ra) %>% 
+  summarize (n = n()) %>% 
+  mutate(
+    lt50 = 
+      case_when(
+        n < 50 ~ 1,
+        TRUE ~ 0)) %>% 
+  ungroup()
