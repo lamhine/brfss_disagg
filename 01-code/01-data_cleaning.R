@@ -257,11 +257,11 @@ ca_df <- ca_df %>%
       race_ct == 0 & hisp_ct == 1 ~ paste0(race_text, hisp_text),
       race_ct == 0 & hisp_ct == 2 ~ "Multiple Hispanic-",
       race_ct == 1 & hisp_ct == 0 ~ paste0(race_text, hisp_text),
-      race_ct == 1 & race_text == "White-" & hisp_ct %in% c(1,2) ~ paste0("White-", "Hispanic-"),
+      race_ct == 1 & race_text == "White-" & hisp_ct %in% c(1,2) ~ paste0("Hispanic-", "White-"),
       race_ct == 1 & race_text == "Black-" & hisp_ct %in% c(1,2) ~ paste0("Black-", "Hispanic-"),
       race_ct == 1 & race_text == "AIAN-" & hisp_ct %in% c(1,2) ~ paste0("AIAN-", "Hispanic-"),
       race_ct == 1 & race_text %in% c("Asian-", "Asian Indian-", "Chinese-", "Filipino-", "Japanese-", "Korean-", "Vietnamese-", "Other Asian-") & hisp_ct %in% c(1,2) ~ paste0("Asian-", "Hispanic-"),
-      race_ct == 1 & race_text %in% c("Pacific Islander-", "Native Hawaiian-", "Guamanian-", "Samoan-", "Other Pacific Islander-") & hisp_ct %in% c(1,2) ~ paste0("Pacific Islander-", "Hispanic-"),
+      race_ct == 1 & race_text %in% c("Pacific Islander-", "Native Hawaiian-", "Guamanian-", "Samoan-", "Other Pacific Islander-") & hisp_ct %in% c(1,2) ~ paste0("Hispanic-", "Pacific Islander-"),
       race_ct == 2 & hisp_ct == 0 ~ paste0(race_text, hisp_text),
       race_ct == 2 & hisp_ct %in% c(1,2) ~ paste0(race_text, "Hispanic-")
       )
@@ -281,7 +281,8 @@ lt50_df <- ca_df %>%
         TRUE ~ 0)) %>% 
   ungroup()
 
-# use hypodescent model based on group size to classify remaining Multiracial participants
+
+# ALTERNATE CODING FOR AI/AN AND NHPI FIRST
 lt50_df <- lt50_df %>% 
   mutate(
     lt50_ra = 
@@ -289,13 +290,13 @@ lt50_df <- lt50_df %>%
         re_text == "Native Hawaiian-" ~ "Pacific Islander-",
         re_text == "Guamanian-" ~ "Pacific Islander-",
         re_text == "Cuban-" ~ "Other Hispanic-",
-        lt50 == 1 & str_detect(re_text, "Pacific Islander") ~ "Other Multiracial Pacific Islander-", 
-        lt50 == 1 & str_detect(re_text, "AIAN") ~ "Other Multiracial AIAN-",
-        lt50 == 1 & str_detect(re_text, "Black") ~ "Other Multiracial Black-",
-        #lt50 == 1 & str_detect(re_text, "Hispanic") ~ "Other Multiracial Hispanic-",
-        lt50 == 1 & str_detect(re_text, "Asian") ~ "Other Multiracial Asian-",
+        lt50 == 1 & str_detect(re_text, "AIAN") ~ "AIAN-Multiple-",
+        lt50 == 1 & str_detect(re_text, "Pacific Islander") ~ "Pacific Islander-Multiple-", 
+        lt50 == 1 & str_detect(re_text, "Black") ~ "Black-Multiple-",
+        lt50 == 1 & str_detect(re_text, "Asian") ~ "Asian-Multiple",
+        #lt50 == 1 & str_detect(re_text, "Hispanic") ~ "Hispanic-Multiple-",
         TRUE ~ re_text)
-    ) %>% 
+  ) %>% 
   select(-c("n", "lt50"))
 
 # join in new lt50_ra2 variable
@@ -309,11 +310,32 @@ ca_df <- ca_df %>%
       TRUE ~ lt50_ra)
     )
 
+# reorder group names in Multiracial groups to be alphabetical
+ca_df <- ca_df %>% 
+  mutate(
+    lt50_ra = case_when(
+      lt50_ra == "Asian" ~ "Unspecified Asian",
+      lt50_ra == "White-AIAN-Hispanic" ~ "AIAN-Hispanic-White",
+      lt50_ra == "White-Black-Hispanic" ~ "Black-Hispanic-White",
+      lt50_ra == "White-Hispanic" ~ "Hispanic-White",
+      lt50_ra == "Black-AIAN" ~ "AIAN-Black",
+      lt50_ra == "Black-Asian" ~ "Asian-Black",
+      lt50_ra == "White-AIAN" ~ "AIAN-White",
+      lt50_ra == "White-Asian" ~ "Asian-White",
+      lt50_ra == "White-Black" ~ "Black-White",
+      lt50_ra == "White-Black-AIAN" ~ "AIAN-Black-White",
+      lt50_ra == "White-Other Race" ~ "Other Race-White",
+      lt50_ra == "White-Pacific Islander" ~ "Pacific Islander-White",
+      lt50_ra == "White-Black-Hispanic" ~ "Black-Hispanic-White",
+      lt50_ra == "Other Race" ~ "Unknown Race",
+      lt50_ra == "DK/R" ~ "Unknown Race",
+      TRUE ~ lt50_ra)
+  )
+
 # check group counts
 ca_df %>% 
   group_by(lt50_ra) %>% 
   summarize (n = n()) %>% View()
-
 
 ## Create summary group color labels
 ca_df <- ca_df %>% 
@@ -323,19 +345,27 @@ ca_df <- ca_df %>%
       lt50_ra == "White" ~ "White",
       lt50_ra == "Black" ~ "Black",
       lt50_ra == "AIAN" ~ "AIAN",
-      lt50_ra %in% c("Asian", "Asian Indian", "Chinese", "Filipino", "Japanese", "Korean", "Vietnamese", "Other Asian") ~ "Asian", 
+      lt50_ra %in% c("Unspecified Asian", "Asian Indian", "Chinese", "Filipino", "Japanese", "Korean", "Vietnamese", "Other Asian") ~ "Asian", 
       lt50_ra %in% c("Pacific Islander", "Native Hawaiian", "Guamanian", "Samoan", "Other Pacific Islander") ~ "NHPI",
-      lt50_ra == "Other Race" ~ "Other Race",
-      lt50_ra == "DK/R" ~ "DK/R",
+      lt50_ra == "Unknown Race" ~ "Unknown Race",
       TRUE ~ "Multiracial"
     )
   )
 
 
-
-
+ca_df %>% 
+  group_by(re_col_lab, lt50_ra) %>% 
+  summarize (n = n()) %>% View()
 
 ## RECODE OTHER VARIABLES ##
+
+# Replace NAs in ast_now with "No" for those never diagnosed with asthma
+ca_df <- ca_df %>% 
+  mutate(
+    ast_now = case_when(
+      ast_lt == 2 ~ 2, 
+      TRUE ~ ast_now
+    ))
 
 # Mutate 7, 77, 9, 99 in all relevant variables to NA
 ca_df <- ca_df %>% 
