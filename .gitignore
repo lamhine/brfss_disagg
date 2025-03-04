@@ -1,5 +1,29 @@
+# Ignore config.R to prevent storing local file paths
+config.R
+
+# Ignore all data files in the "data" folder
+data/*
+
+# Allow essential dataset metadata to be tracked
+!data/README.md
+!data/data_instructions.md
+
+# Ignore BRFSS `.rds` and `.sas7bdat` files everywhere
+*.rds
+*.sas7bdat
+
+# Ignore archived files (optional)
+04_archive/*
+
+# Ignore RStudio project-specific and local session files
 .Rproj.user
 .Rhistory
 .RData
 .Ruserdata
+
+# Ignore Box API credentials (if applicable)
 ~/.boxr-oauth
+
+# Ignore any other temporary or log files
+*.log
+*.tmp
