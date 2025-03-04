@@ -24,6 +24,9 @@ data/*
 # Ignore Box API credentials (if applicable)
 ~/.boxr-oauth
 
+# Ignore MacOS system files
+.DS_Store
+
 # Ignore any other temporary or log files
 *.log
 *.tmp
