@@ -8,9 +8,7 @@
 # 1. LOAD PACKAGES & CONFIGURATION #############################################
 
 # Load required packages
-library(dplyr)
-library(forcats)
-library(readr)
+library(tidyverse)
 library(labelled)
 
 # Ensure the working directory is the RStudio Project root
