@@ -1,44 +1,26 @@
-# =====================================================================
 # 02_clean_data.R [CLEAN AND PREP BRFSS DATA]
 # Purpose: Process raw BRFSS CA data, clean variables, handle missing values, and categorize variables.
-# Author: Tracy Lam-Hine
-# Created: 2025-03-04
-# =====================================================================
 
-# 1. LOAD PACKAGES & CONFIGURATION #############################################
+# ---------------------- #
+# LOAD PACKAGES AND CONFIGURATION
+# ---------------------- #
 
 # Load required packages
 library(tidyverse)
 library(labelled)
 
-# Ensure the working directory is the RStudio Project root
-if (!rstudioapi::isAvailable() ||
-    is.null(rstudioapi::getActiveProject())) {
-  stop("ERROR: Please open the RStudio Project (.RProj) before running this script.")
-}
-
-# Load configuration file
+# Load configuration and setup files
 source("config.R")
+source("setup.R")
 
-# Confirm raw data directory is correctly set
-if (!dir.exists(raw_data_dir)) {
-  stop(
-    "ERROR: The data directory does not exist. Please update 'config.R' with the correct path."
-  )
-}
-
-# Ensure processed data directory exists before saving
-if (!dir.exists(processed_data_dir)) {
-  dir.create(processed_data_dir, recursive = TRUE)
-  message("Created missing processed data directory: ",
-          processed_data_dir)
-}
+# ---------------------- #
+# LOAD AND CLEAN DATA
+# ---------------------- #
 
 # Load raw dataset from previous step
 ca_df <- readRDS(file.path(processed_data_dir, "ca_bound.rds"))
 
-### 2. SELECT AND RENAME VARIABLES #############################################
-# Subset to variables needed
+# Select and rename variables; subset to those needed 
 ca_df <- ca_df %>%
   dplyr::select(
     `_LLCPWT`,
@@ -229,7 +211,7 @@ ca_df <- ca_df %>%
     )
   )
 
-### 3. HANDLE MISSING VALUES ###################################################
+# Handle missing value codes
 ca_df <- ca_df %>%
   mutate(
     age = na_if(age, 7) %>% na_if(9),
@@ -293,7 +275,7 @@ ca_df <- ca_df %>%
     ~ if_else(. %in% c(7, 77, 9, 99), NA_real_, .)
   ))
 
-### 4. RECATEGORIZE MULTI-CATEGORY FACTOR VARIABLES ############################
+# Recategorize multi-category factor variables 
 ca_df <- ca_df %>%
   mutate(across(
     -c(LLCPWT, PSU, STSTR, YEAR, age, mphd_poor, mmhd_poor, hisp, race),
@@ -379,7 +361,7 @@ ca_df <- ca_df %>%
     dm = fct_collapse(dm, "Yes" = "1", "No" = c("2", "3", "4"))
   )
 
-### 5. RECATEGORIZE BINARY VARIABLES (YES/NO) ##################################
+# Recategorize binary variables
 ca_df <- ca_df %>%
   mutate(# Standard yes/no binary variables (forcing Yes to be level 1)
     across(
@@ -434,7 +416,7 @@ ca_df <- ca_df %>%
     ))
 
 
-### 6. ASSIGN LABELS FOR GTSUMMARY #############################################
+# Assign labels for gtsummary()
 var_label(ca_df) <- list(
   sex = "Male sex",
   age_grp = "Age categories",
@@ -473,7 +455,9 @@ var_label(ca_df) <- list(
   dis_walk = "Difficulty walking"
 )
 
-### 8. SAVE CLEANED DATA #######################################################
+# ---------------------- #
+# SAVE FILES TO PROCESSED DATA DIRECTORY
+# ---------------------- #
 
 # Save cleaned dataset
 saveRDS(ca_df, file.path(processed_data_dir, "ca_cleaned.rds"))

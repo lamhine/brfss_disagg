@@ -1,11 +1,9 @@
-# =====================================================================
 # 01_load_data.R [LOAD BRFSS DATA]
 # Purpose: Load and merge California BRFSS microdata (2014-2022)
-# Author: Tracy Lam-Hine
-# Created: 2025-03-04
-# =====================================================================
 
-### 1. LOAD PACKAGES & CONFIGURATION ####################################
+# ---------------------- #
+# LOAD PACKAGES AND CONFIGURATION
+# ---------------------- #
 
 # Load required packages
 library(haven)       # Read .sas7bdat files
@@ -13,30 +11,13 @@ library(data.table)  # Efficient data handling
 library(tidyverse)   # Core tidyverse packages
 library(rstudioapi)  # Ensure RProj environment detection
 
-# Ensure the working directory is the RStudio Project root
-if (!rstudioapi::isAvailable() ||
-    is.null(rstudioapi::getActiveProject())) {
-  stop("ERROR: Please open the RStudio Project (.RProj) before running this script.")
-}
-
-# Load configuration file
+# Load configuration and setup files
 source("config.R")
+source("setup.R")
 
-# Confirm raw data directory is correctly set
-if (!dir.exists(raw_data_dir)) {
-  stop(
-    "ERROR: The data directory does not exist. Please update 'config.R' with the correct path."
-  )
-}
-
-# Ensure processed data directory exists before saving
-if (!dir.exists(processed_data_dir)) {
-  dir.create(processed_data_dir, recursive = TRUE)
-  message("Created missing processed data directory: ",
-          processed_data_dir)
-}
-
-### 2. LOAD & MERGE 2014-2022 CA BRFSS DATA #############################
+# ---------------------- #
+# LOAD & MERGE 2014-2022 CA BRFSS DATA
+# ---------------------- #
 
 # Get list of all `.sas7bdat` files in `raw_data_dir`
 brfss_files <- list.files(path = raw_data_dir,
@@ -72,12 +53,13 @@ if (!dir.exists(processed_data_dir)) {
           processed_data_dir)
 }
 
-# Save raw dataset
+# ---------------------- #
+# SAVE FILES TO PROCESSED DATA DIRECTORY
+# ---------------------- #
+
 saveRDS(ca_bound, file = file.path(processed_data_dir, "ca_bound.rds"))
 message("Saved raw BRFSS dataset: ",
         file.path(processed_data_dir, "ca_bound.rds"))
-
-### 3. VALIDATION CHECKS #######################################################
 
 # Quick check of loaded data
 glimpse(ca_bound)

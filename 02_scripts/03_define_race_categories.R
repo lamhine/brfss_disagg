@@ -1,42 +1,23 @@
-# =====================================================================
-# 03_define_race_categories.R [DEFINE DETAILED RACE/ETHNICITY CATEGORIES]
+# 03_define_race_categories.R 
 # Purpose: Recode and define detailed race/ethnicity categories
-# Author: Tracy Lam-Hine
-# Created: 2025-03-05
-# =====================================================================
 
-# 1. LOAD PACKAGES & CONFIGURATION #############################################
+# ---------------------- #
+# LOAD PACKAGES AND CONFIGURATION
+# ---------------------- #
 
 # Load required packages
 library(tidyverse)
 
-# Ensure the working directory is the RStudio Project root
-if (!rstudioapi::isAvailable() ||
-    is.null(rstudioapi::getActiveProject())) {
-  stop("ERROR: Please open the RStudio Project (.RProj) before running this script.")
-}
-
-# Load configuration file
+# Load configuration and setup files
 source("config.R")
+source("setup.R")
 
-# Confirm raw data directory is correctly set
-if (!dir.exists(raw_data_dir)) {
-  stop(
-    "ERROR: The data directory does not exist. Please update 'config.R' with the correct path."
-  )
-}
-
-# Ensure processed data directory exists before saving
-if (!dir.exists(processed_data_dir)) {
-  dir.create(processed_data_dir, recursive = TRUE)
-  message("Created missing processed data directory: ",
-          processed_data_dir)
-}
+# ---------------------- #
+# LOAD CLEANED DATA AND PREP RACE CATEGORIES
+# ---------------------- #
 
 # Load cleaned dataset from previous step
 ca_df <- readRDS(file.path(processed_data_dir, "ca_cleaned.rds"))
-
-# 2. RECODE RACE AND ETHNICITY VARIABLES #######################################
 
 # Function to reorder digits in a number (preserves categorical meaning)
 reorder_digits <- function(num) {
@@ -69,8 +50,7 @@ ca_df <- ca_df %>%
     )
   )
 
-
-# 3. RACE & HISPANIC CODE DICTIONARIES ---------------------------
+# Create race and ethnicity lookup codes
 race_lookup <- c(
   "10" = "White",
   "20" = "Black",
@@ -83,7 +63,7 @@ race_lookup <- c(
   "45" = "Korean",
   "46" = "Vietnamese",
   "47" = "Other Asian",
-  "50" = "Pacific Islander",
+  "50" = "NHPI",
   "51" = "Native Hawaiian",
   "52" = "Guamanian",
   "53" = "Samoan",
@@ -106,9 +86,7 @@ hisp_lookup <- c(
   "99" = ""
 )
 
-
-
-# 4. CONVERT NUMERIC CODES TO TEXT -------------------------------
+# Convert numeric codes to text based on lookups
 ca_df <- ca_df %>%
   mutate(
     # Ensure multi-digit race and Hispanic codes are properly separated BEFORE replacement
@@ -160,8 +138,6 @@ ca_df <- ca_df %>%
     -sorted_hisp
   )  # Remove temp columns
 
-
-# 5. IDENTIFY GROUPS < 50 AND RECLASSIFY -------------------------
 # Count group sizes
 group_counts <- ca_df %>%
   count(re_text, name = "n")
@@ -220,10 +196,17 @@ ca_df <- ca_df %>%
     re_text
   ))
 
-# 6. FINAL GROUP COUNTS AND OUTPUT #############################################
+# Remove unneeded columns
+ca_df <- ca_df %>% 
+  select(-c("race_text", "hisp_text"))
 
+# Final group counts
 final_group_counts <- ca_df %>%
   count(re_text, name = "final_n")
+
+# ---------------------- #
+# SAVE FILES TO PROCESSED DATA DIRECTORY
+# ---------------------- #
 
 # Save cleaned dataset
 saveRDS(ca_df, file.path(processed_data_dir, "ca_race_cleaned.rds"))
