@@ -77,4 +77,4 @@ For questions or issues, open a GitHub issue.
 This repository contains code only, as the California BRFSS dataset is subject to CDPH data use policies.
 
 ## Acknowledgments
-This analysis was conducted using California BRFSS microdata provided by the CDPH). The author acknowledges the contributions of the CDC BRFSS program in survey design and implementation and would like to thank Vanessa Miguelino-Keasling, MPH and Nicholas Cuvelier, MPH for their assistance in accessing the data. 
+This analysis was conducted using California BRFSS microdata provided by the CDPH. The author acknowledges the contributions of the CDC BRFSS program in survey design and implementation and would like to thank Vanessa Miguelino-Keasling, MPH and Nicholas Cuvelier, MPH for their assistance in accessing the data. 
