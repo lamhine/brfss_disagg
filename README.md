@@ -7,7 +7,7 @@ Key health indicators include:
 - **Lifestyle factors** (smoking, alcohol use, physical activity)
 - **Preventive healthcare** (vaccinations, screenings, access to care)
 - **Chronic conditions** (diabetes, asthma, cardiovascular conditions, obesity, mental health)
-- **General health status**
+- **General health status** (fair or poor general health status, poor mental/physical health days)
 - **Disabilities** (vision impairment, cognitive difficulty, mobility limitations)
 
 ## Data Availability and Access
