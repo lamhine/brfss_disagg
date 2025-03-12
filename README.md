@@ -4,8 +4,9 @@
 This repository contains code for analyzing the California Behavioral Risk Factor Surveillance System (BRFSS) microdata (2014-2022) with a focus on disaggregating health indicators by detailed race/ethnicity groups. The analysis applies survey weighting, multiple imputation for missing data, age standardization, and predictive marginal standardization to ensure robust estimates.
 
 Key health indicators include:
-- **Health behaviors** (smoking, alcohol use, physical activity, preventive care)
-- **Chronic conditions** (diabetes, asthma, cardiovascular disease)
+- **Lifestyle factors** (smoking, alcohol use, physical activity)
+- **Preventive healthcare** (vaccinations, screenings, access to care)
+- **Chronic conditions** (diabetes, asthma, cardiovascular conditions, obesity, mental health)
 - **General health status**
 - **Disabilities** (vision impairment, cognitive difficulty, mobility limitations)
 
