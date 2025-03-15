@@ -17,7 +17,7 @@ source("setup.R")
 # ---------------------- #
 
 # Load cleaned dataset from previous step
-ca_df <- readRDS(file.path(processed_data_dir, "ca_cleaned.rds"))
+ca_df <- readRDS(file.path(processed_data_dir, "02_ca_cleaned.rds"))
 
 # Function to reorder digits in a number (preserves categorical meaning)
 reorder_digits <- function(num) {
@@ -209,10 +209,10 @@ final_group_counts <- ca_df %>%
 # ---------------------- #
 
 # Save cleaned dataset
-saveRDS(ca_df, file.path(processed_data_dir, "ca_race_cleaned.rds"))
+saveRDS(ca_df, file.path(processed_data_dir, "03_ca_race_cleaned.rds"))
 message(
   "Saved cleaned BRFSS dataset: ",
-  file.path(processed_data_dir, "ca_race_cleaned.rds")
+  file.path(processed_data_dir, "03_ca_race_cleaned.rds")
 )
 
 # End of script

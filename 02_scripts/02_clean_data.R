@@ -18,10 +18,10 @@ source("setup.R")
 # ---------------------- #
 
 # Load raw dataset from previous step
-ca_df <- readRDS(file.path(processed_data_dir, "ca_bound.rds"))
+ca_bound <- readRDS(file.path(processed_data_dir, "01_ca_bound.rds"))
 
 # Select and rename variables; subset to those needed 
-ca_df <- ca_df %>%
+ca_df <- ca_bound %>%
   dplyr::select(
     `_LLCPWT`,
     `_PSU`,
@@ -363,13 +363,12 @@ ca_df <- ca_df %>%
 
 # Recategorize binary variables
 ca_df <- ca_df %>%
-  mutate(# Standard yes/no binary variables (forcing Yes to be level 1)
+  mutate(
+    # Standard yes/no binary variables (forcing Yes to be level 1)
     across(
       c(
         smoke,
         drink_any,
-        chk2_no,
-        pcp_no,
         fphs,
         mphd_poor,
         mmhd_poor,
@@ -386,83 +385,42 @@ ca_df <- ca_df %>%
         dis_conc,
         dis_err,
         dis_dress,
-        dis_walk,
-        hivtest_no,
-        ins_no
+        dis_walk
       ),
       ~ factor(
         case_when(
-          .x %in% c("Yes", "No") ~ .x,
-          # Keep as is if already "Yes"/"No"
+          .x %in% c("Yes", "No") ~ .x,  # Keep as is if already "Yes"/"No"
           .x == "1" ~ "Yes",
           .x == "2" ~ "No",
           TRUE ~ NA_character_  # Preserve NAs
         ),
         levels = c("Yes", "No")
       )
-    ), # Reverse-coded yes/no binary variables (forcing Yes to be level 1)
+    ), 
+    # Reverse-coded yes/no binary variables (forcing Yes to be level 1)
     across(
-      c(ovwob, drink_binge, exer_no, laiv_no, pcv_no),
+      c(ovwob, drink_binge, exer_no, hivtest_no, laiv_no, pcv_no, chk2_no, pcp_no, ins_no),
       ~ factor(
         case_when(
-          .x %in% c("Yes", "No") ~ .x,
-          # Keep as is if already "Yes"/"No"
+          .x %in% c("Yes", "No") ~ .x,  # Keep as is if already "Yes"/"No"
           .x == "2" ~ "Yes",
           .x == "1" ~ "No",
           TRUE ~ NA_character_  # Preserve NAs
         ),
         levels = c("Yes", "No")
       )
-    ))
+    )
+  )
 
-
-# Assign labels for gtsummary()
-var_label(ca_df) <- list(
-  sex = "Male sex",
-  age_grp = "Age categories",
-  edu = "Education level",
-  income = "Income level",
-  marital = "Marital status",
-  children = "Number of children",
-  employ = "Employment status",
-  ownhome = "Homeowner",
-  smoke = "Ever Smoked",
-  drink_any = "Any alcohol use",
-  drink_binge = "Binge drinking",
-  exer_no = "No exercise in last 30 days",
-  hivtest_no = "Never had HIV test",
-  laiv_no = "Never had flu vaccine",
-  pcv_no = "Never had pneumonia vaccine",
-  chk2_no = "No routine checkup in last 2 years",
-  pcp_no = "No primary care provider",
-  fphs = "Fair or poor health status",
-  mphd_poor = "Frequent poor physical health",
-  mmhd_poor = "Frequent poor mental health",
-  ovwob = "Overweight or obese",
-  dm = "Diabetes diagnosis",
-  copd = "COPD diagnosis",
-  mdd = "Major depression diagnosis",
-  ckd = "Chronic kidney disease",
-  bcc = "Skin cancer diagnosis",
-  mi = "Heart dttack",
-  apcvd = "Angina or coronary heart disease",
-  ast_lt = "Lifetime asthma",
-  ast_now = "Current asthma",
-  vip = "Vision impairment",
-  dis_conc = "Cognitive difficulty",
-  dis_err = "Difficulty running errands",
-  dis_dress = "Difficulty dressing",
-  dis_walk = "Difficulty walking"
-)
 
 # ---------------------- #
 # SAVE FILES TO PROCESSED DATA DIRECTORY
 # ---------------------- #
 
 # Save cleaned dataset
-saveRDS(ca_df, file.path(processed_data_dir, "ca_cleaned.rds"))
+saveRDS(ca_df, file.path(processed_data_dir, "02_ca_cleaned.rds"))
 message("Saved cleaned BRFSS dataset: ",
-        file.path(processed_data_dir, "ca_cleaned.rds"))
+        file.path(processed_data_dir, "02_ca_cleaned.rds"))
 
 # End of script
 message("02_clean_data.R completed successfully.")

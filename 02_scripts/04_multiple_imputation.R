@@ -1,4 +1,4 @@
-# 04_multiple_imputation.R [IMPUTE MISSING DATA]
+# 04_multiple_imputation.R
 # Purpose: Handle missing data via multiple imputation.
 
 # ---------------------- #
@@ -19,13 +19,7 @@ source("setup.R")
 # ---------------------- #
 
 # Load cleaned dataset with detailed race categorized from previous step
-ca_df <- readRDS(file.path(processed_data_dir, "ca_race_cleaned.rds"))
-
-# Define variables to exclude from imputation (survey design + race/ethnicity)
-exclude_vars <- c("YEAR", "PSU", "STSTR", "LLCPWT", "age", "race", "hisp", "re_text")
-
-# Define imputation variables (everything except excluded vars)
-impute_vars <- setdiff(names(ca_df), exclude_vars)
+ca_df <- readRDS(file.path(processed_data_dir, "03_ca_race_cleaned.rds"))
 
 # Subset data for imputation
 df_subset <- ca_df %>% select(all_of(impute_vars))
@@ -50,20 +44,20 @@ plan(multisession)
 
 # Perform multiple imputation
 imp <- mice(
-  ca_df, 
+  df_subset, 
   method = methods, 
-  m = 20, 
-  maxit = 10, 
+  m = 5, 
+  maxit = 5, 
   seed = 123, 
   predictorMatrix = pred_matrix
 )
 
 # Extract completed datasets from the imputation object
-imputed_data <- complete(imp, action = "all") 
+ca_imp <- complete(imp, action = "all") 
 
 # Add back in survey variables
-imputed_data <- lapply(imputed_data, function(df_imp) {
-  bind_cols(df %>% select(all_of(survey_vars)), df_imp)
+ca_imp <- lapply(ca_imp, function(df_imp) {
+  bind_cols(ca_df %>% select(all_of(exclude_vars)), df_imp)
 })
 
 # ---------------------- #
@@ -71,8 +65,10 @@ imputed_data <- lapply(imputed_data, function(df_imp) {
 # ---------------------- #
 
 # Save the imputed dataset
-saveRDS(ca_imp, file.path(processed_data_dir, "ca_imputed.rds"))
-message("Saved imputed dataset: ", file.path(processed_data_dir, "ca_imputed.rds"))
+saveRDS(imp, file.path(processed_data_dir, "04A_ca_imputed.rds"))
+saveRDS(ca_imp, file.path(processed_data_dir, "04B_ca_completed.rds"))
+message("Saved imputed dataset: ", file.path(processed_data_dir, "04A_ca_imputed.rds"))
+message("Saved completed imputations: ", file.path(processed_data_dir, "04B_ca_completed.rds"))
 
 # End of script
-message("03_multiple_imputation.R completed successfully.")
+message("04_multiple_imputation.R completed successfully.")

@@ -57,13 +57,12 @@ if (!dir.exists(processed_data_dir)) {
 # SAVE FILES TO PROCESSED DATA DIRECTORY
 # ---------------------- #
 
-saveRDS(ca_bound, file = file.path(processed_data_dir, "ca_bound.rds"))
+saveRDS(ca_bound, file = file.path(processed_data_dir, "01_ca_bound.rds"))
 message("Saved raw BRFSS dataset: ",
-        file.path(processed_data_dir, "ca_bound.rds"))
+        file.path(processed_data_dir, "01_ca_bound.rds"))
 
 # Quick check of loaded data
-glimpse(ca_bound)
-summary(ca_bound$YEAR)  # Confirm years range from 2014-2022
+str(ca_bound)
 
 # End of script
 message("01_load_data.R completed successfully.")

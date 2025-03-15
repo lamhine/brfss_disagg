@@ -37,6 +37,7 @@ message("Using results directory", results_dir)
 # Load some commonly used packages (update or comment out if not preferred)
 library(rstudioapi)
 library(tidyverse)
+library(tidycensus)
 library(summarytools)
 library(janitor)
 
@@ -45,3 +46,26 @@ options(scipen = 999)
 
 # Set survey design settings
 options(survey.lonely.psu = "adjust")
+
+# Set API key (replace "YOUR_CENSUS_API_KEY" with actual key in `.Renviron`)
+# The key should be stored in your system's `.Renviron` file 
+# Run the following command in your R console:
+
+# usethis::edit_r_environ()
+
+# This will open the `.Renviron` file in RStudio. 
+# Add the following line (without quotes), replacing YOUR_CENSUS_API_KEY:
+
+# census_api_key=YOUR_CENSUS_API_KEY
+
+# Save the `.Renviron` file and restart R for the changes to take effect.
+# Retrieve API key from environment
+api_key <- Sys.getenv("census_api_key")
+
+# Set the API key only if it's missing or empty
+if (nzchar(api_key)) {
+  message("Census API key already set.")
+} else {
+  census_api_key(api_key, install = TRUE)
+  message("Census API key set successfully.")
+}
