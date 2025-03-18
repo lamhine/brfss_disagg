@@ -70,23 +70,23 @@ variable_labels <- c(
   
   # Preventive healthcare
   hivtest_no = "Never had HIV test",
-  laiv_no = "Never had flu vaccine",
+  laiv_no = "No flu vaccine in last 12 months",
   pcv_no = "Never had pneumonia vaccine",
+  ins_no = "No health insurance",
   chk2_no = "No routine checkup in last 2 years",
   pcp_no = "No primary care provider",
-  ins_no = "No health insurance",
   
   # Chronic conditions
   apcvd = "Angina or coronary heart disease",
   mi = "Heart attack",
-  dm = "Diabetes diagnosis",
+  dm = "Diabetes",
   ckd = "Chronic kidney disease",
   ast_lt = "Lifetime asthma",
   ast_now = "Current asthma",
-  copd = "COPD diagnosis",
-  bcc = "Skin cancer diagnosis",
+  copd = "COPD",
+  bcc = "Skin cancer",
+  mdd = "Depressive disorder",
   ovwob = "Overweight or obese",
-  mdd = "Major depression diagnosis",
   
   # General health status
   fphs = "Fair or poor health status",

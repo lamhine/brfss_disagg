@@ -34,12 +34,12 @@ std_heatmap_data <- final_combined_df %>%
   # Assign re_groups 
   mutate(
     re_groups = case_when(
-      str_detect(re_text, "Mexican|Puerto Rican|Cuban|Hispanic") ~ "Hispanic",
+      str_detect(re_text, "Mexican|Puerto Rican|Cuban|Multiple Hispanic") ~ "Hispanic",
       re_text == "White" ~ "White",
       re_text == "Black" ~ "Black",
       re_text == "AIAN" ~ "AIAN",
-      re_text %in% c("Asian", "Asian Indian", "Chinese", "Filipino", "Japanese", "Korean", "Vietnamese", "Other Asian") ~ "Asian", 
-      re_text %in% c("NHPI", "Pacific Islander", "Native Hawaiian", "Guamanian", "Samoan", "Other Pacific Islander") ~ "NHPI",
+      re_text %in% c("Asian Indian", "Chinese", "Filipino", "Japanese", "Korean", "Vietnamese", "Other Asian", "Unspecified Asian") ~ "Asian", 
+      re_text %in% c("Pacific Islander", "Native Hawaiian", "Guamanian", "Samoan", "Other Pacific Islander", "Unspecified NHPI") ~ "NHPI",
       re_text %in% c("Other Race", "DK/R") ~ "Other Race",
       TRUE ~ "Multiracial"
     ),
@@ -57,15 +57,14 @@ std_heatmap_data <- final_combined_df %>%
 
 # Order re_text correctly within re_groups
 ordered_re_text <- std_heatmap_data %>%
-  arrange(
-    re_groups,
-    case_when(
-      re_groups == "Asian" & re_text == "Other Asian" ~ 2,  # Move to bottom of Asian
-      re_groups == "NHPI" & re_text == "Other Pacific Islander" ~ 2,  # Move to bottom of NHPI
+  mutate(
+    sort_order = case_when(
+      re_groups == "Asian" & re_text %in% c("Other Asian", "Unspecified Asian") ~ 2,  # Move to bottom of Asian
+      re_groups == "NHPI" & re_text %in% c("Other Pacific Islander", "Unspecified NHPI") ~ 2,  # Move to bottom of NHPI
       TRUE ~ 1  # Default alphabetical order
-    ),
-    re_text  # Alphabetize within each category
+    )
   ) %>%
+  arrange(re_groups, sort_order, re_text) %>%  # First sort by group, then order, then alphabetize
   pull(re_text) %>%
   unique()
 

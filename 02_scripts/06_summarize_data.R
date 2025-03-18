@@ -7,6 +7,7 @@
 
 # Load required packages
 library(tidyverse)
+library(labelled)
 library(gt)
 library(gtsummary)
 library(survey)
@@ -19,7 +20,8 @@ source("setup.R")
 # LOAD IMPUTED DATA AND CONVERT OUTCOMES TO NUMERIC FOR SURVEY DESIGN
 # ---------------------- #
 
-# Load imputed survey designs
+# Load cleaned dataset and imputed survey designs
+ca_df <- readRDS(file.path(processed_data_dir, "03_ca_race_cleaned.rds"))
 survey_designs <- readRDS(file.path(processed_data_dir, "05_survey_designs.rds"))
 
 # Extract first imputed dataset for Table 1
@@ -37,8 +39,20 @@ var_label(imputed_design$variables) <- as.list(variable_labels)
 # CREATE TABLE 1
 # ---------------------- #
 
-# Generate Table 1A: Stratified by Sex
-table1_sex <- tbl_svysummary(
+# Generate Table: Summary of participant characteristics
+table1 <- tbl_svysummary(
+  data = imputed_design, 
+  include = c("sex", "age_grp", "re_text"),
+  statistic = list(all_categorical() ~ "{n_unweighted} ({p}%)"),
+  digits = all_categorical() ~ c(0, 1),
+  missing = "no")
+
+# ---------------------- #
+# CREATE APPENDIX TABLES
+# ---------------------- #
+
+# Generate Appendix A1: Stratified by Sex
+appendix_A1_sex <- tbl_svysummary(
   data = imputed_design,
   by = "sex",
   include = all_of(setdiff(table_vars, "age_grp")),
@@ -52,8 +66,8 @@ table1_sex <- tbl_svysummary(
                   "{level}, N = {n_unweighted} ({style_percent(p)}%)") %>%
   modify_spanning_header(c("stat_1", "stat_2") ~ "Sex")
 
-# Generate Table 1B: Stratified by Age Group
-table1_age <- tbl_svysummary(
+# Generate Appendix A2: Stratified by Age Group
+appendix_A1_age <- tbl_svysummary(
   data = imputed_design,
   by = "age_grp",
   include = all_of(setdiff(table_vars, "sex")),
@@ -67,24 +81,38 @@ table1_age <- tbl_svysummary(
   modify_spanning_header(all_stat_cols() ~ "Age group")
 
 # Merge tables by characteristic 
-table1 <- as_tibble(table1_sex) %>%
-  full_join(as_tibble(table1_age), by = "Characteristic") %>% 
+appendix_A <- as_tibble(appendix_A1_sex) %>%
+  full_join(as_tibble(appendix_A1_age), by = "Characteristic") %>% 
   gt() %>% 
-  tab_spanner(label = "Sex", columns = names(as_tibble(table1_sex))[-c(1,2)]) %>%
-  tab_spanner(label = "Age group", columns = names(as_tibble(table1_age))[-1])
+  tab_spanner(label = "Sex", columns = names(as_tibble(appendix_A1_sex))[-c(1,2)]) %>%
+  tab_spanner(label = "Age group", columns = names(as_tibble(appendix_A1_age))[-1])
 
 # Print table
-table1
+appendix_A
+
+# Generate Appendix B: Missingness frequencies
+appendix_B <- tbl_summary(
+  data = ca_df, 
+  include = all_of(c(table_vars, "re_text")),
+  statistic = list(all_categorical() ~ "{n} ({p}%)"),
+  digits = all_categorical() ~ c(0, 1),
+  missing = "always",
+  missing_stat = "{p_miss}"
+) %>% 
+  remove_row_type(all_of(c(table_vars, "re_text")), type = "level") 
+
 
 # ---------------------- #
 # SAVE FILES TO RESULTS DIRECTORY
 # ---------------------- #
 
-# Save table as an RDS object
-saveRDS(table1, file.path(results_dir, "06_table1_summary.rds"))
+# Save table as an RDS object (un-commment if needed)
+# saveRDS(table1, file.path(results_dir, "06_table1_summary.rds"))
 
 # Save as a Word document
-gtsave(table1, file.path(results_dir, "06_table1_summary.docx"))
+gtsave(as_gt(table1), file.path(results_dir, "06_table1_summary.docx"))
+gtsave(appendix_A, file.path(results_dir, "06_appendix_A.docx"))
+gtsave(as_gt(appendix_B), file.path(results_dir, "06_appendix_B.docx"))
 
 # End of script
 message("06_summarize_data.R completed successfully.")

@@ -46,11 +46,12 @@ ca_df <- ca_df %>%
       race == "4044" ~ "40",
       race == "4460" ~ "4060",
       race == "5050" ~ "50",
+      is.na(race) & hisp == "5" ~ "DK/R",
       TRUE ~ race
-    )
+      )
   )
 
-# Create race and ethnicity lookup codes
+# Create race, Hispanic ethnicity, and subgroup lookup codes
 race_lookup <- c(
   "10" = "White",
   "20" = "Black",
@@ -86,59 +87,90 @@ hisp_lookup <- c(
   "99" = ""
 )
 
-# Convert numeric codes to text based on lookups
+subgroup_lookup <- c(
+  "Mexican" = "Hispanic",
+  "Puerto Rican" = "Hispanic",
+  "Cuban" = "Hispanic", 
+  "Other Hispanic" = "Hispanic",
+  "Asian Indian" = "Asian", 
+  "Chinese" = "Asian", 
+  "Filipino" = "Asian", 
+  "Japanese" = "Asian", 
+  "Korean" = "Asian", 
+  "Vietnamese" = "Asian", 
+  "Other Asian" = "Asian", 
+  "Native Hawaiian" = "NHPI", 
+  "Guamanian" = "NHPI", 
+  "Samoan" = "NHPI", 
+  "Other Pacific Islander" = "NHPI"
+  )
+
+
+# Convert numeric codes to text based on lookups and process text
 ca_df <- ca_df %>%
   mutate(
-    # Ensure multi-digit race and Hispanic codes are properly separated BEFORE replacement
+    # Collapse multiple Hispanic groups into "Multiple Hispanic"
+    hisp_collapsed = case_when(
+      hisp %in% names(hisp_lookup) ~ hisp, 
+      TRUE ~ "Multiple Hispanic"),
+    
+    # Ensure multi-digit race codes are properly separated 
     race_separated = str_replace_all(race, "(\\d{2})(?=\\d)", "\\1-"),
-    hisp_separated = case_when(
-      hisp %in% c("77", "99") ~ hisp,
-      # Keep "77" and "99" unchanged
-      TRUE ~ str_replace_all(hisp, "(\\d)(?=\\d)", "\\1-")  # Apply hyphenation to other cases
-    ),
     
     # Replace numeric codes with text labels
     race_text = str_replace_all(race_separated, race_lookup),
-    hisp_text = str_replace_all(hisp_separated, hisp_lookup),
+    hisp_text = str_replace_all(hisp_collapsed, hisp_lookup),
     
-    # Drop "Other Race" and "DK/R" if ANY Hispanic category is present
+    # Simplify race_text when Hispanic groups are present
     race_text = case_when(
+      # Drop "Other Race" and "DK/R" if any Hispanic group is present
       str_detect(race_text, "Other Race|DK/R") & hisp_text != "" ~ "",
+      
+      # Keep aggregated race groups if any Hispanic group is present
+      race_text %in% setdiff(race_lookup, names(subgroup_lookup)) & 
+                   hisp_text != "" ~ race_text,
+      
+      # Aggregate subgroups if any Hispanic category is present
+      hisp_text != "" ~ str_replace_all(race_text, subgroup_lookup),
       TRUE ~ race_text
     ),
     
-    # Split race and Hispanic into lists for sorting
-    race_components = str_split(race_text, "-"),
-    hisp_components = str_split(hisp_text, "-"),
+    # Reaggregate Hispanic subgroups when in combination with another category
+    hisp_text = case_when(
+      !str_detect(race_text, "Other Race|DK/R") & 
+        str_detect(race_text, "\\w") & 
+        hisp_text != "" ~ "Hispanic",
+      TRUE ~ hisp_text
+    ),
     
-    # Sort race components alphabetically, but keep Hispanic first
+    # Split race into lists and sort components alphabetically
+    race_components = str_split(race_text, "-"),
     sorted_race = map_chr(race_components, ~ paste(sort(unique(
       .x
     )), collapse = "-")),
-    sorted_hisp = map_chr(hisp_components, ~ paste(sort(unique(
-      .x
-    )), collapse = "-")),
-    
+
     # Combine Hispanic and Race (Hispanic first if present)
     re_text = case_when(
-      sorted_hisp != "" &
-        sorted_race != "" ~ paste(sorted_hisp, sorted_race, sep = "-"),
-      sorted_hisp != "" &
-        sorted_race == "" ~ sorted_hisp,
+      hisp_text != "" &
+        sorted_race != "" ~ paste(hisp_text, sorted_race, sep = "-"),
+      
       # Only Hispanic
+      hisp_text != "" &
+        sorted_race == "" ~ hisp_text,
+      
+      # Only race (no Hispanic)
       TRUE ~ sorted_race
-    )  # Only race (no Hispanic)
+    )  
   ) %>%
   select(
+    -hisp_collapsed,
     -race_separated,
-    -hisp_separated,
     -race_components,
-    -hisp_components,
-    -sorted_race,
-    -sorted_hisp
+    -sorted_race
   )  # Remove temp columns
 
-# Count group sizes
+
+# Phase 1: Identify small groups and apply subgroup reclassification
 group_counts <- ca_df %>%
   count(re_text, name = "n")
 
@@ -147,34 +179,22 @@ small_groups <- group_counts %>%
   filter(n < 50) %>%
   pull(re_text)
 
-# Phase 1: Apply subgroup reclassification
-ca_df <- ca_df %>%
-  mutate(
-    re_text = ifelse(
-      re_text %in% small_groups,
-      re_text %>%
-        str_replace_all("\\b(Native Hawaiian|Guamanian|Samoan|Other Pacific Islander|Pacific Islander)\\b", "NHPI") %>%
-        str_replace_all("\\b(Chinese|Filipino|Japanese|Korean|Vietnamese|Asian Indian|Other Asian)\\b", "Asian") %>%
-        str_replace_all("\\b(Mexican|Puerto Rican|Cuban|Other Hispanic)\\b", "Hispanic") %>%
-        str_replace_all("\\b(Hispanic-)+Hispanic\\b", "Hispanic"),  # Prevents "Hispanic-Hispanic"
-      re_text
-    )
-  ) %>%
-  # Remove repeated occurrences of "Hispanic-" (e.g., "Hispanic-Hispanic" → "Hispanic")
-  mutate(re_text = str_replace_all(re_text, "\\b(Hispanic-)+Hispanic\\b", "Hispanic"))
-
-
-# If "Other Hispanic" is the only Hispanic category, replace it with "Hispanic"
+# Apply subgroup reclassification using and subgroup lookup table
 ca_df <- ca_df %>%
   mutate(
     re_text = case_when(
-      str_detect(re_text, "\\bOther Hispanic\\b") & !str_detect(re_text, "Mexican|Puerto Rican|Cuban") ~ 
-        str_replace(re_text, "Other Hispanic", "Hispanic"),
+      # If the group is in small_groups AND is a Hispanic category, reclassify as "Other Hispanic"
+      re_text %in% small_groups & str_detect(re_text, "Mexican|Puerto Rican|Cuban|Other Hispanic") ~ "Other Hispanic",
+      
+      # Otherwise, apply subgroup lookup replacements
+      re_text %in% small_groups ~ str_replace_all(re_text, subgroup_lookup),
+      
+      # Keep original values if no match
       TRUE ~ re_text
     )
   )
 
-# Phase 2: Aggregate small groups using priority order
+# Phase 2: Re-calculate small groups and re-aggregate using priority order
 group_counts <- ca_df %>%
   count(re_text, name = "n")
 
@@ -182,6 +202,7 @@ small_groups <- group_counts %>%
   filter(n < 50) %>%
   pull(re_text)
 
+# Priority to avoid data genocide: NHPI > AIAN > Black > Asian > Hispanic 
 ca_df <- ca_df %>%
   mutate(re_text = ifelse(
     re_text %in% small_groups,
@@ -196,13 +217,29 @@ ca_df <- ca_df %>%
     re_text
   ))
 
+# Rename "Asian" and "NHPI" as "Unspecified" 
+ca_df <- ca_df %>% 
+  mutate(
+    re_text = case_when(
+      re_text == "Asian" ~ "Unspecified Asian",
+      re_text == "NHPI" ~ "Unspecified NHPI", 
+      TRUE ~ re_text
+    )
+  )
+
+# Make sure no groups are under 50
+group_counts <- ca_df %>%
+  count(re_text, name = "n")
+
+small_groups <- group_counts %>%
+  filter(n < 50) %>%
+  pull(re_text)
+
+print(small_groups)
+
 # Remove unneeded columns
 ca_df <- ca_df %>% 
   select(-c("race_text", "hisp_text"))
-
-# Final group counts
-final_group_counts <- ca_df %>%
-  count(re_text, name = "final_n")
 
 # ---------------------- #
 # SAVE FILES TO PROCESSED DATA DIRECTORY
