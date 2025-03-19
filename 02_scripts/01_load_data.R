@@ -16,7 +16,7 @@ source("config.R")
 source("setup.R")
 
 # ---------------------- #
-# LOAD & MERGE 2014-2022 CA BRFSS DATA
+# LOAD & MERGE 2014-2023 CA BRFSS DATA
 # ---------------------- #
 
 # Get list of all `.sas7bdat` files in `raw_data_dir`

@@ -91,15 +91,44 @@ appendix_A <- as_tibble(appendix_A1_sex) %>%
 appendix_A
 
 # Generate Appendix B: Missingness frequencies
-appendix_B <- tbl_summary(
-  data = ca_df, 
-  include = all_of(c(table_vars, "re_text")),
-  statistic = list(all_categorical() ~ "{n} ({p}%)"),
-  digits = all_categorical() ~ c(0, 1),
-  missing = "always",
-  missing_stat = "{p_miss}"
-) %>% 
-  remove_row_type(all_of(c(table_vars, "re_text")), type = "level") 
+ca_df <- ca_df %>%
+  mutate(
+    re_groups = case_when(
+      re_text %in% hispanic_groups ~ "Hispanic",
+      re_text %in% names(re_groups_lookup) ~ re_groups_lookup[re_text],
+      TRUE ~ "Multiracial"
+    ),
+    re_groups = factor(re_groups, levels = re_groups_levels) # Ensure correct ordering
+  )
+
+# Compute missingness for each variable overall
+missing_overall <- ca_df %>%
+  summarise(across(all_of(table_vars), ~ mean(is.na(.)) * 100, .names = "Overall_{.col}")) %>%
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Overall") %>%
+  mutate(Variable = str_remove(Variable, "Overall_"))
+
+# Compute missingness by re_groups
+missing_by_group <- ca_df %>%
+  group_by(re_groups) %>%
+  summarise(across(all_of(table_vars), ~ mean(is.na(.)) * 100, .names = "{.col}")) %>%
+  pivot_longer(cols = -re_groups, names_to = "Variable", values_to = "Missing (%)") %>%
+  pivot_wider(names_from = re_groups, values_from = `Missing (%)`)
+
+# Merge tables
+missing_table <- missing_overall %>%
+  left_join(missing_by_group, by = "Variable") %>%
+  left_join(tibble(Variable = names(variable_labels), Label = variable_labels), by = "Variable") %>%
+  select(Label, Overall, all_of(re_groups_levels)) %>%
+  arrange(match(Label, variable_labels))
+
+# Convert to gt table for better formatting
+missing_gt <- missing_table %>%
+  gt() %>%
+  fmt_number(
+    columns = everything(),
+    decimals = 1
+  ) %>%
+  cols_label(Label = "Variable", Overall = "Overall") 
 
 
 # ---------------------- #
@@ -112,7 +141,7 @@ appendix_B <- tbl_summary(
 # Save as a Word document
 gtsave(as_gt(table1), file.path(results_dir, "06_table1_summary.docx"))
 gtsave(appendix_A, file.path(results_dir, "06_appendix_A.docx"))
-gtsave(as_gt(appendix_B), file.path(results_dir, "06_appendix_B.docx"))
+gtsave(missing_gt, file.path(results_dir, "06_appendix_B.docx"))
 
 # End of script
 message("06_summarize_data.R completed successfully.")

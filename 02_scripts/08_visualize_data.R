@@ -7,7 +7,8 @@
 
 # Load required packages
 library(tidyverse)
-library(ggpattern)  # For ggpattern to add patterns
+library(ggpattern)
+library(gt)
 
 # Load configuration and setup files
 source("config.R")
@@ -34,18 +35,13 @@ std_heatmap_data <- final_combined_df %>%
   # Assign re_groups 
   mutate(
     re_groups = case_when(
-      str_detect(re_text, "Mexican|Puerto Rican|Cuban|Multiple Hispanic") ~ "Hispanic",
-      re_text == "White" ~ "White",
-      re_text == "Black" ~ "Black",
-      re_text == "AIAN" ~ "AIAN",
-      re_text %in% c("Asian Indian", "Chinese", "Filipino", "Japanese", "Korean", "Vietnamese", "Other Asian", "Unspecified Asian") ~ "Asian", 
-      re_text %in% c("Pacific Islander", "Native Hawaiian", "Guamanian", "Samoan", "Other Pacific Islander", "Unspecified NHPI") ~ "NHPI",
-      re_text %in% c("Other Race", "DK/R") ~ "Other Race",
+      re_text %in% hispanic_groups ~ "Hispanic",
+      re_text %in% names(re_groups_lookup) ~ re_groups_lookup[re_text],
       TRUE ~ "Multiracial"
     ),
     
     # Define the correct order of re_groups
-    re_groups = factor(re_groups, levels = c("AIAN", "Asian", "Black", "Hispanic", "Multiracial", "NHPI", "White", "Other Race")),
+    re_groups = factor(re_groups, levels = re_groups_levels),
     
     # Ensure correct order for category labels
     category_labels = factor(outcome_cats[outcome], levels = category_order),
@@ -174,16 +170,81 @@ heatmap_plot <- ggplot(std_heatmap_data, aes(x = outcome, y = fct_rev(re_text),
 heatmap_plot
 
 # ---------------------- #
+# CREATE SUMMARY TABLE CHARACTERIZING MIN AND MAX FOR EACH OUTCOME
+# ---------------------- #
+
+# Summarize data into a min-max table
+min_max_prevalence <- final_combined_df %>%
+  filter(
+    adjustment_type == "Standardized",
+    RSE <= 30, 
+    re_text != "DK/R") %>%  # Exclude high RSE and "DK/R"
+  group_by(outcome) %>%
+  summarise(
+    min_group = re_text[which.min(prevalence)], 
+    min_prevalence = min(prevalence, na.rm = TRUE) * 100,
+    min_CI_lower = (min(prevalence, na.rm = TRUE) - 1.96 * min(se_prevalence, na.rm = TRUE)) * 100,
+    min_CI_upper = (min(prevalence, na.rm = TRUE) + 1.96 * min(se_prevalence, na.rm = TRUE)) * 100,
+    
+    max_group = re_text[which.max(prevalence)], 
+    max_prevalence = max(prevalence, na.rm = TRUE) * 100,
+    max_CI_lower = (max(prevalence, na.rm = TRUE) - 1.96 * max(se_prevalence, na.rm = TRUE)) * 100,
+    max_CI_upper = (max(prevalence, na.rm = TRUE) + 1.96 * max(se_prevalence, na.rm = TRUE)) * 100,
+    
+    prevalence_diff = round(max_prevalence - min_prevalence, 1),  # Calculate & round difference
+    prevalence_ratio = round(max_prevalence / min_prevalence, 1)  # Calculate & round ratio
+  ) %>%
+  mutate(
+    outcome_label = variable_labels[outcome],  # Use human-readable labels
+    min_prevalence_CI = sprintf("%.1f (%.1f - %.1f)", min_prevalence, min_CI_lower, min_CI_upper),
+    max_prevalence_CI = sprintf("%.1f (%.1f - %.1f)", max_prevalence, max_CI_lower, max_CI_upper),
+    outcome_category = outcome_cats[outcome]  # Assign category label
+  ) %>%
+  select(outcome_category, outcome_label, min_group, min_prevalence_CI, 
+         max_group, max_prevalence_CI, prevalence_diff, prevalence_ratio) %>%  # Include new columns
+  arrange(factor(outcome_category, levels = unique(outcome_cats)), 
+          factor(outcome_label, levels = variable_labels))
+
+# Put into a gt table format
+min_max_gt <-  min_max_prevalence %>%
+  gt(groupname_col = "outcome_category") %>%  # Group by health indicator category
+  cols_label(
+    outcome_label = "Health Indicator",
+    min_group = "Lowest Prevalence Group",
+    min_prevalence_CI = "Lowest Prevalence (95% CI)",
+    max_group = "Highest Prevalence Group",
+    max_prevalence_CI = "Highest Prevalence (95% CI)",
+    prevalence_diff = "Prevalence Difference",
+    prevalence_ratio = "Prevalence Ratio"
+  ) %>%
+  fmt_number(
+    columns = c(prevalence_diff, prevalence_ratio),
+    decimals = 1
+  ) %>%
+  tab_options(
+    table.font.size = px(14),
+    heading.align = "center",
+    row_group.font.weight = "bold",  # Bold sub-header rows
+    row_group.border.top.width = px(2),  # Add top border for each category
+    row_group.border.top.color = "black"
+  )
+
+print(min_max_gt)
+
+# ---------------------- #
 # SAVE FILES TO RESULTS DIRECTORY
 # ---------------------- #
 
-# Save the plot as a PNG file
+# Save the heatmap plot as a PNG file
 ggsave(file.path(results_dir, "08_heatmap.png"), plot = heatmap_plot, 
        width = 14, height = 10, units = "in", dpi = 300)
 
-# Save the plot as a PDF file
+# Save the heatmap plot as a PDF file
 ggsave(file.path(results_dir, "08_heatmap.pdf"), plot = heatmap_plot, 
        width = 14, height = 10, units = "in", dpi = 300)
+
+# Save the min-max table as a DOCX file
+gtsave(min_max_gt, file.path(results_dir, "09_min_max_prevalence_table.docx"))
 
 # End of script
 message("08_visualize_data.R completed successfully.")

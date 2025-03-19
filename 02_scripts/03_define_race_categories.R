@@ -87,24 +87,6 @@ hisp_lookup <- c(
   "99" = ""
 )
 
-subgroup_lookup <- c(
-  "Mexican" = "Hispanic",
-  "Puerto Rican" = "Hispanic",
-  "Cuban" = "Hispanic", 
-  "Other Hispanic" = "Hispanic",
-  "Asian Indian" = "Asian", 
-  "Chinese" = "Asian", 
-  "Filipino" = "Asian", 
-  "Japanese" = "Asian", 
-  "Korean" = "Asian", 
-  "Vietnamese" = "Asian", 
-  "Other Asian" = "Asian", 
-  "Native Hawaiian" = "NHPI", 
-  "Guamanian" = "NHPI", 
-  "Samoan" = "NHPI", 
-  "Other Pacific Islander" = "NHPI"
-  )
-
 
 # Convert numeric codes to text based on lookups and process text
 ca_df <- ca_df %>%

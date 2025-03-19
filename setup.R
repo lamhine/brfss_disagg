@@ -29,7 +29,65 @@ dir_check_create(processed_data_dir, "processed data directory")
 dir_check_create(results_dir, "results directory")
 
 # ---------------------- #
-# DEFINE VARIABLE GROUPS
+# DEFINE RACE/ETHNICITY GROUPINGS AND LEVELS
+# ---------------------- #
+
+# Lookup table for subgroup reclassification
+subgroup_lookup <- c(
+  # Hispanic subgroups
+  "Mexican" = "Hispanic",
+  "Puerto Rican" = "Hispanic",
+  "Cuban" = "Hispanic", 
+  "Other Hispanic" = "Hispanic",
+  
+  # Asian subgroups
+  "Asian Indian" = "Asian", 
+  "Chinese" = "Asian", 
+  "Filipino" = "Asian", 
+  "Japanese" = "Asian", 
+  "Korean" = "Asian", 
+  "Vietnamese" = "Asian", 
+  "Other Asian" = "Asian", 
+  
+  # NHPI subgroups
+  "Native Hawaiian" = "NHPI", 
+  "Guamanian" = "NHPI", 
+  "Samoan" = "NHPI", 
+  "Other Pacific Islander" = "NHPI"
+)
+
+# Define `re_groups_lookup` for broader racial classification
+re_groups_lookup <- c(
+  "White" = "White",
+  "Black" = "Black",
+  "AIAN" = "AIAN",
+  "Asian Indian" = "Asian",
+  "Chinese" = "Asian",
+  "Filipino" = "Asian",
+  "Japanese" = "Asian",
+  "Korean" = "Asian",
+  "Vietnamese" = "Asian",
+  "Other Asian" = "Asian",
+  "Unspecified Asian" = "Asian",
+  "Pacific Islander" = "NHPI",
+  "Native Hawaiian" = "NHPI",
+  "Guamanian" = "NHPI",
+  "Samoan" = "NHPI",
+  "Other Pacific Islander" = "NHPI",
+  "Unspecified NHPI" = "NHPI",
+  "Other Race" = "Other Race",
+  "DK/R" = "Other Race"
+)
+
+# Any group containing "Hispanic" should be categorized as "Hispanic"
+hispanic_groups <- c("Hispanic", "Mexican", "Puerto Rican", "Cuban", "Multiple Hispanic")
+
+# Define ordered factor levels for re_groups
+re_groups_levels <- c("AIAN", "Asian", "Black", "Hispanic", "Multiracial", "NHPI", "White", "Other Race")
+
+
+# ---------------------- #
+# DEFINE OUTCOME VARIABLE GROUPINGS
 # ---------------------- #
 
 # Final list of all relevant variables
