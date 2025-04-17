@@ -51,6 +51,47 @@ std_heatmap_data <- final_combined_df %>%
   ) %>% 
   select(-c(adjustment_type, se_prevalence, age_grp, sex))
 
+# ---------------------- #
+# CREATE CENSUS-STYLE HEATMAP GROUPS (heatmap_groups)
+# ---------------------- #
+
+std_heatmap_data <- std_heatmap_data %>%
+  mutate(
+    heatmap_groups = map(re_text, function(group) {
+      groupings <- c()
+      
+      # Assign usual groupings
+      if (str_detect(group, "Hispanic|Mexican|Puerto Rican|Cuban|Other Hispanic")) groupings <- c(groupings, "Hispanic")
+      if (str_detect(group, "AIAN")) groupings <- c(groupings, "AIAN")
+      if (str_detect(group, "Asian|Chinese|Filipino|Japanese|Vietnamese|Korean|Asian Indian|Other Asian|Unspecified Asian")) groupings <- c(groupings, "Asian")
+      if (str_detect(group, "Black")) groupings <- c(groupings, "Black")
+      if (str_detect(group, "White")) groupings <- c(groupings, "White")
+      if (str_detect(group, "Pacific Islander|NHPI|Samoan|Guamanian|Hawaiian|Native Hawaiian|Other Pacific Islander|Unspecified NHPI")) {
+        groupings <- c(groupings, "NHPI")
+      }
+      if (str_detect(group, "Other Race")) groupings <- c(groupings, "Other Race")
+      if (str_detect(group, "DK/R")) groupings <- c(groupings, "DK/R")
+      
+      # Count racial mentions (excluding Hispanic-related words)
+      race_count <- str_count(group, paste(c(
+        "AIAN", "Asian", "Black", "White", "NHPI", 
+        "Pacific Islander", "Native Hawaiian", "Samoan", "Guamanian", "Multiple"
+      ), collapse = "|"))
+      
+      # Add Multiracial if: more than one race mentioned (regardless of Hispanic status)
+      if (race_count > 1) groupings <- c(groupings, "Multiracial")
+      
+      # Fallback if still empty
+      if (length(groupings) == 0) groupings <- "Multiracial"
+      
+      return(unique(groupings))
+    })
+  ) %>%
+  unnest(heatmap_groups) %>%
+  mutate(
+    heatmap_groups = factor(heatmap_groups, levels = re_groups_levels)
+  )
+
 # Order re_text correctly within re_groups
 ordered_re_text <- std_heatmap_data %>%
   mutate(
@@ -69,15 +110,73 @@ std_heatmap_data <- std_heatmap_data %>%
   mutate(re_text = factor(re_text, levels = ordered_re_text))
 
 # ---------------------- #
-# PROCESS OUTCOME AND CALCULATE MIN/MAX NORMALIZED PREVALENCE 
+# INSERT VERTICAL GAP COLUMNS BETWEEN OUTCOME CATEGORIES
 # ---------------------- #
 
-# Step 1: Ensure outcome is a factor in the correct order
-std_heatmap_data <- std_heatmap_data %>%
-  mutate(outcome = factor(outcome, levels = variable_labels[names(outcome_cats)]))
+# Build ordered outcome list with gap markers
+outcome_order_df <- std_heatmap_data %>%
+  select(outcome, category_labels) %>%
+  distinct() %>%
+  mutate(category_labels = factor(category_labels, levels = category_order)) %>%
+  arrange(category_labels) %>%
+  mutate(outcome = as.character(outcome))
 
-# Step 2: Replace variable names with human-readable labels
-levels(std_heatmap_data$outcome) <- variable_labels[names(outcome_cats)]
+# Create gap outcome labels (e.g. "gap_1", "gap_2", ...)
+gap_outcomes <- outcome_order_df %>%
+  group_by(category_labels) %>%
+  summarise(max_outcome = last(outcome), .groups = "drop") %>%
+  mutate(gap_outcome = paste0("gap_", row_number())) %>%
+  pull(gap_outcome)
+
+# Interleave gap outcomes after each category
+outcome_order_with_gaps <- outcome_order_df %>%
+  group_by(category_labels) %>%
+  summarise(outcomes = list(outcome), .groups = "drop") %>%
+  mutate(outcomes = map2(outcomes, row_number(), function(outs, i) {
+    if (i == length(category_order)) {
+      outs
+    } else {
+      c(outs, paste0("gap_", i))
+    }
+  })) %>%
+  pull(outcomes) %>%
+  flatten_chr()
+
+# Create dummy rows for each gap × re_text × heatmap_group
+row_structure <- std_heatmap_data %>%
+  distinct(re_text, heatmap_groups)
+
+gap_data <- expand.grid(
+  outcome = outcome_order_with_gaps[outcome_order_with_gaps %in% paste0("gap_", seq_len(10))],
+  re_text = unique(std_heatmap_data$re_text),
+  stringsAsFactors = FALSE
+) %>%
+  left_join(row_structure, by = "re_text") %>%
+  mutate(
+    prevalence = NA,
+    RSE = NA,
+    label = "",
+    label_cell = FALSE,
+    Normalized_Values = NA,
+    RSE_category = "Low",
+    category_labels = NA  # optional
+  )
+
+# Bind in gap rows and refactor outcome
+std_heatmap_data <- bind_rows(std_heatmap_data, gap_data) %>%
+  mutate(outcome = factor(outcome, levels = outcome_order_with_gaps))
+
+# Make each gap label unique but visually blank
+gap_levels <- grep("^gap_", levels(std_heatmap_data$outcome), value = TRUE)
+replacement_labels <- strrep(" ", seq_along(gap_levels))  # " ", "  ", "   ", ...
+
+levels(std_heatmap_data$outcome) <- levels(std_heatmap_data$outcome) %>%
+  replace(match(gap_levels, .), replacement_labels)
+
+
+# ---------------------- #
+# PROCESS OUTCOME AND CALCULATE MIN/MAX NORMALIZED PREVALENCE 
+# ---------------------- #
 
 # Normalize values within each outcome and convert prevalence to character
 std_heatmap_data <- std_heatmap_data %>%
@@ -104,13 +203,106 @@ std_heatmap_data <- std_heatmap_data %>%
     RSE_category = case_when(
       RSE < 30 ~ "Low",  # Low RSE: transparent (no pattern)
       RSE >= 30 ~ "High",  # Medium RSE: crosshatch
-      TRUE ~ "Unknown"  # Handle any missing or unexpected RSE values
+      TRUE ~ "Low"  # For 0% prevalence outcomes
     )
   )
 
+# ---------------------- #
+# ID HIGHEST AND LOWEST PREVALENCE GROUPS WITHIN EACH OUTCOME
+# ---------------------- #
+
+# Identify rows to label: highest and lowest prevalence per outcome
+label_flags <- std_heatmap_data %>%
+  filter(!is.na(outcome)) %>%
+  group_by(outcome) %>%
+  mutate(
+    max_flag = prevalence == max(as.numeric(prevalence), na.rm = TRUE),
+    min_flag = prevalence == min(as.numeric(prevalence), na.rm = TRUE),
+    label_cell = max_flag | min_flag
+  ) %>%
+  ungroup() %>%
+  select(outcome, re_text, heatmap_groups, label_cell)
+
+# Get only distinct rows
+label_flags <- label_flags %>%
+  distinct(outcome, re_text, heatmap_groups, .keep_all = TRUE)
+
+# Join back using all keys including heatmap_groups
+std_heatmap_data <- std_heatmap_data %>%
+  left_join(label_flags, by = c("outcome", "re_text", "heatmap_groups")) 
+
+# Clean up duplicate columns from join
+std_heatmap_data <- std_heatmap_data %>%
+  select(-label_cell.x) %>%                         # remove old version
+  rename(label_cell = label_cell.y) %>%             # keep the joined version
+  mutate(label_cell = ifelse(is.na(label_cell), FALSE, label_cell))  # fill NAs as FALSE
+
+# Create label column to pass to aes in ggplot
+std_heatmap_data <- std_heatmap_data %>%
+  mutate(
+    label = case_when(
+      RSE >= 30 & label_cell ~ paste0(prevalence, "*"),
+      RSE >= 30 & !label_cell ~ "*",
+      RSE < 30 & label_cell ~ prevalence,
+      TRUE ~ ""  # For all other cells
+    )
+  )
 
 # ---------------------- #
-# CREATE HEATMAP WITH ggpattern
+# CREATE HEATMAP LABELING ONLY MIN/MAX GROUP PER OUTCOME 
+# ---------------------- #
+
+# Modified heatmap plot with default reversed blue color scale for normalized prevalence and gray crosshatch visibility
+heatmap_minmax <- ggplot(std_heatmap_data, aes(x = outcome, y = fct_rev(re_text),
+                                             pattern = RSE_category, fill = Normalized_Values)) +  
+  
+  geom_tile(aes(fill = Normalized_Values), color = NA)+
+  
+  # Set the pattern types for RSE categories
+  scale_pattern_manual(name = "RSE Level",
+                       values = c(
+                         Low = "none",       # No pattern for Low RSE
+                         High = "stripe",    # Stripe pattern for High RSE
+                         Unknown = "none"    # No pattern for Unknown (NA) RSE category
+                       )) +
+  
+  # Default ggplot blue color gradient for normalized prevalence (reversed)
+  scale_fill_gradient(name = "Normalized prevalence", 
+                      trans = "reverse",  # Reverse the default ggplot blue-to-white gradient
+                      na.value = "white") +  # Handle NAs with white
+  
+  # Add text labels with manual color assignment
+  geom_text(data = subset(std_heatmap_data, label != ""),
+            aes(label = label), color = "white", size = 3, hjust = 0.5) +
+  
+  labs(title = NULL, x = NULL, y = NULL) +
+  
+  facet_grid(rows = vars(heatmap_groups), scales = "free_y", space = "free_y") +
+  
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 10),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "bottom",
+    
+    strip.text.y = element_text(angle = 0, hjust = 0.5),
+    strip.text.x = element_text(size = 10),
+    panel.spacing.x = unit(0.5, "lines")  # Adds padding between facets
+  ) +
+  
+  # Adjust guides for the legends for normalized prevalence and RSE
+  guides(
+    fill = guide_colorbar(title = "Normalized prevalence"),  # For normalized prevalence
+    pattern = guide_legend(title = "RSE Level")  # For RSE category patterns
+  )
+
+# Plot
+heatmap_minmax
+
+# ---------------------- #
+# CREATE FULL HEATMAP WITH ALL LABEL VALUES USING ggpattern
 # ---------------------- #
 
 # Modified heatmap plot with default reversed blue color scale for normalized prevalence and gray crosshatch visibility

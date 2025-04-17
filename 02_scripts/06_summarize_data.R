@@ -48,6 +48,13 @@ table1 <- tbl_svysummary(
   missing = "no")
 
 # ---------------------- #
+# CREATE TABLE 2
+# ---------------------- #
+
+# Generate Table: Summary of high vs. low 
+
+
+# ---------------------- #
 # CREATE APPENDIX TABLES
 # ---------------------- #
 

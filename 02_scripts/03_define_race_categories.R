@@ -19,21 +19,6 @@ source("setup.R")
 # Load cleaned dataset from previous step
 ca_df <- readRDS(file.path(processed_data_dir, "02_ca_cleaned.rds"))
 
-# Function to reorder digits in a number (preserves categorical meaning)
-reorder_digits <- function(num) {
-  if (num < 10) {
-    num  # If the number has only one digit, return it
-  } else {
-    digits <- as.numeric(strsplit(as.character(num), '')[[1]])
-    sorted_digits <- sort(digits)
-    as.numeric(paste(sorted_digits, collapse = ''))
-  }
-}
-
-# Apply function to Hispanic variable
-ca_df <- ca_df %>%
-  mutate(hisp = as.numeric(hisp), hisp = sapply(hisp, reorder_digits))
-
 # Standardize race and Hispanic variables
 ca_df <- ca_df %>%
   mutate(race = as.character(race), hisp = as.character(hisp))
@@ -48,8 +33,23 @@ ca_df <- ca_df %>%
       race == "5050" ~ "50",
       is.na(race) & hisp == "5" ~ "DK/R",
       TRUE ~ race
-      )
+      ),
+    hisp = case_when(
+      hisp == "" ~ "7", 
+      TRUE ~ hisp
+    )
   )
+
+# Function to reorder digits in a character string
+reorder_digits <- function(x) {
+  if (is.na(x)) return(NA_character_)
+  if (nchar(x) < 2) return(x)
+  paste0(sort(strsplit(x, "")[[1]]), collapse = "")
+}
+
+# Apply to hisp as character
+ca_df <- ca_df %>%
+  mutate(hisp = Vectorize(reorder_digits)(hisp))
 
 # Create race, Hispanic ethnicity, and subgroup lookup codes
 race_lookup <- c(

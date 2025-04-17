@@ -46,8 +46,8 @@ plan(multisession)
 imp <- mice(
   df_subset, 
   method = methods, 
-  m = 5, 
-  maxit = 5, 
+  m = 20, 
+  maxit = 20, 
   seed = 123, 
   predictorMatrix = pred_matrix
 )

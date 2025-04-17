@@ -73,6 +73,7 @@ ca_df <- ca_bound %>%
     CHCSCNC1,
     HAVEPLN3,
     `_HLTHPLN`,
+    `_HLTHPL1`,
     CHECKUP2,
     CHECKUP1,
     PERSDOC,
@@ -129,7 +130,7 @@ ca_df <- ca_df %>%
     dis_conc = coalesce(REMEM2, DECIDE),
     dis_err = coalesce(DIFFERND, DIFFALON),
     dis_dress = coalesce(DIFDRES2, DIFFDRES),
-    ins_no = coalesce(HAVEPLN3, `_HLTHPLN`),
+    ins_no = coalesce(HAVEPLN3, `_HLTHPLN`, `_HLTHPL1`),
     chk2_no = coalesce(CHECKUP2, CHECKUP1),
     pcp_no = coalesce(PERSDOC, PERSDOC3)
   ) %>%
@@ -203,6 +204,7 @@ ca_df <- ca_df %>%
       DIFFDRES,
       HAVEPLN3,
       `_HLTHPLN`,
+      `_HLTHPL1`,
       CHECKUP2,
       CHECKUP1,
       PERSDOC,

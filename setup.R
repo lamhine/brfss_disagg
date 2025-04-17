@@ -83,7 +83,7 @@ re_groups_lookup <- c(
 hispanic_groups <- c("Hispanic", "Mexican", "Puerto Rican", "Cuban", "Multiple Hispanic")
 
 # Define ordered factor levels for re_groups
-re_groups_levels <- c("AIAN", "Asian", "Black", "Hispanic", "Multiracial", "NHPI", "White", "Other Race")
+re_groups_levels <- c("AIAN", "Asian", "Black", "Hispanic", "Multiracial", "NHPI", "White", "Other Race", "DK/R")
 
 
 # ---------------------- #
